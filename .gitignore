@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+client/node_modules/
+
+# Environment Variables
+.env
+.env.local
+
+# Logs
+*.log
+npm-debug.log*
+
+# SQLite WAL and temp files
+server/*.sqlite-shm
+server/*.sqlite-wal
+
+# OS Files
+.DS_Store
+Thumbs.db
