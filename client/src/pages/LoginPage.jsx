@@ -144,7 +144,7 @@ export default function LoginPage({ setCurrentRoute }) {
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    College Roll No
+                    Registration Number
                   </label>
                   <input
                     type="text"
@@ -175,7 +175,7 @@ export default function LoginPage({ setCurrentRoute }) {
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              {mode === 'register' ? 'Institutional Email Address *' : 'Email Address or Username *'}
+              {mode === 'register' ? 'Student Email *' : 'Email Address or Username *'}
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
@@ -184,7 +184,7 @@ export default function LoginPage({ setCurrentRoute }) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={mode === 'register' ? 'e.g. rollno@gecwc.ac.in' : 'Enter email or username'}
+                placeholder={mode === 'register' ? 'e.g. student@gmail.com' : 'Enter email or username'}
                 className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-blue-600"
               />
             </div>

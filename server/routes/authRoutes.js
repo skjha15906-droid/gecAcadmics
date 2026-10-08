@@ -62,7 +62,7 @@ router.post('/register', (req, res) => {
   // Basic email validation
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(cleanEmail)) {
-    return res.status(400).json({ error: 'Please provide a valid institutional email address.' });
+    return res.status(400).json({ error: 'Please provide a valid student email address.' });
   }
 
   if (password.length < 6) {

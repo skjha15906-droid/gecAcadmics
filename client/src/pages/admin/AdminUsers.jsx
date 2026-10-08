@@ -169,7 +169,7 @@ export default function AdminUsers() {
             type="text"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by student name, roll number, email..."
+            placeholder="Search by student name, reg number, email..."
             className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-blue-600"
           />
         </div>
@@ -198,7 +198,7 @@ export default function AdminUsers() {
               <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[10px] tracking-wider">
                 <tr>
                   <th className="py-3 px-4">User</th>
-                  <th className="py-3 px-4">Roll / ID</th>
+                  <th className="py-3 px-4">Reg No / ID</th>
                   <th className="py-3 px-4">Semester</th>
                   <th className="py-3 px-4">Role</th>
                   <th className="py-3 px-4">Uploads (Appr / Rej)</th>
