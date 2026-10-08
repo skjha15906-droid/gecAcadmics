@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const { db } = require('../db');
 const { requireAuth, requireRole, logActivity } = require('../middleware/auth');
+const { sendAdminReplyToStudent } = require('../utils/emailService');
 
 // All admin routes require admin role
 router.use(requireAuth);
@@ -41,6 +42,11 @@ router.get('/dashboard', (req, res) => {
     SELECT * FROM admin_activity_logs ORDER BY created_at DESC LIMIT 8
   `).all();
 
+  // Recent contact messages / student inquiries
+  const recentMessages = db.prepare(`
+    SELECT * FROM contact_messages ORDER BY created_at DESC LIMIT 10
+  `).all();
+
   res.json({
     metrics: {
       totalStudents,
@@ -54,7 +60,8 @@ router.get('/dashboard', (req, res) => {
       totalDownloads: totals.total_downloads || 0
     },
     pendingQueue,
-    recentLogs
+    recentLogs,
+    recentMessages
   });
 });
 
@@ -677,6 +684,55 @@ router.patch('/contact-messages/:id/status', (req, res) => {
   db.prepare('UPDATE contact_messages SET status = ? WHERE id = ?').run(newStatus, id);
 
   res.json({ success: true, message: `Message marked as ${newStatus}`, status: newStatus });
+});
+
+// POST /api/admin/contact-messages/:id/reply - Send and store in-portal reply to student inquiry
+router.post('/contact-messages/:id/reply', (req, res) => {
+  const { id } = req.params;
+  const { replyMessage } = req.body;
+
+  if (!replyMessage || !replyMessage.trim()) {
+    return res.status(400).json({ error: 'Reply message cannot be empty.' });
+  }
+
+  const msg = db.prepare('SELECT * FROM contact_messages WHERE id = ?').get(id);
+  if (!msg) {
+    return res.status(404).json({ error: 'Inquiry not found.' });
+  }
+
+  const cleanReply = replyMessage.trim();
+  const repliedBy = req.user.name;
+
+  db.prepare(`
+    UPDATE contact_messages
+    SET admin_reply = ?,
+        replied_at = CURRENT_TIMESTAMP,
+        replied_by = ?,
+        status = 'replied'
+    WHERE id = ?
+  `).run(cleanReply, repliedBy, id);
+
+  logActivity(req.user.id, req.user.name, req.user.role, 'REPLY_INQUIRY', 'contact_messages', id, `Sent in-portal response to ${msg.name} (${msg.email})`);
+
+  // Attempt to deliver reply to student's email inbox if SMTP is configured
+  sendAdminReplyToStudent({
+    studentEmail: msg.email,
+    studentName: msg.name,
+    originalSubject: msg.subject,
+    originalMessage: msg.message,
+    replyMessage: cleanReply,
+    adminName: repliedBy
+  }).catch((err) => {
+    console.error('Background student reply email notification error:', err.message);
+  });
+
+  res.json({
+    success: true,
+    message: 'Reply sent and recorded successfully!',
+    admin_reply: cleanReply,
+    replied_by: repliedBy,
+    status: 'replied'
+  });
 });
 
 // DELETE /api/admin/contact-messages/:id - Delete a contact message

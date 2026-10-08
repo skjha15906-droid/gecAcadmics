@@ -130,5 +130,41 @@ router.post('/contact', async (req, res) => {
   });
 });
 
+// GET /api/inquiries/check - Allow students to track their inquiry status and view admin replies
+router.get('/inquiries/check', (req, res) => {
+  const { email, ticketId } = req.query;
+
+  if (!email && !ticketId) {
+    return res.status(400).json({ error: 'Please provide your email address or ticket ID to track your inquiry.' });
+  }
+
+  let inquiries = [];
+
+  if (ticketId && ticketId.trim()) {
+    const id = parseInt(ticketId.trim(), 10);
+    if (!isNaN(id)) {
+      const item = db.prepare(`
+        SELECT id, name, email, subject, message, status, admin_reply, replied_at, replied_by, created_at
+        FROM contact_messages
+        WHERE id = ?
+      `).get(id);
+      if (item) inquiries.push(item);
+    }
+  } else if (email && email.trim()) {
+    inquiries = db.prepare(`
+      SELECT id, name, email, subject, message, status, admin_reply, replied_at, replied_by, created_at
+      FROM contact_messages
+      WHERE LOWER(email) = LOWER(?)
+      ORDER BY created_at DESC
+    `).all(email.trim());
+  }
+
+  res.json({
+    inquiries,
+    total: inquiries.length
+  });
+});
+
 module.exports = router;
+
 

@@ -16,9 +16,32 @@ import {
   Check,
   X,
   History,
-  MessageSquare
+  MessageSquare,
+  Mail,
+  ExternalLink,
+  Inbox,
+  Send,
+  MessageCircle
 } from 'lucide-react';
 import { formatBytes } from '../../components/NoteCard';
+
+export function getDefaultReplyTemplate(msg, type = 'general') {
+  if (!msg) return '';
+  const studentName = msg.name || 'Student';
+  const topic = msg.subject || 'Academic Query';
+
+  switch (type) {
+    case 'resolved':
+      return `Dear ${studentName},\n\nThank you for reaching out to the GECWC Academics Portal administration.\n\nYour reported issue/request regarding "${topic}" has been reviewed and resolved by the portal administration. Please check the portal and verify.\n\nIf you have any further questions or require additional study materials, feel free to contact us anytime.\n\nBest regards,\nShubh Kumar Jha\nLead Developer & Portal Administrator\nDepartment of Computer Science & Engineering\nGovernment Engineering College, West Champaran`;
+
+    case 'notes_added':
+      return `Dear ${studentName},\n\nThank you for your note contribution/request regarding "${topic}".\n\nThe requested study materials have been verified against the BEU curriculum and published live on the portal. You can now access and download them from the Subjects section.\n\nKeep contributing and all the best with your semester preparations!\n\nBest regards,\nShubh Kumar Jha\nLead Developer & Portal Administrator\nGovernment Engineering College, West Champaran`;
+
+    case 'general':
+    default:
+      return `Dear ${studentName},\n\nThank you for reaching out to the GECWC Academics Portal administration regarding "${topic}".\n\n\n\nBest regards,\nShubh Kumar Jha\nLead Developer & Portal Administrator\nDepartment of Computer Science & Engineering\nGovernment Engineering College, West Champaran`;
+  }
+}
 
 export default function AdminDashboard({
   setActiveAdminTab,
@@ -28,6 +51,50 @@ export default function AdminDashboard({
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [actionMsg, setActionMsg] = useState('');
+
+  // In-portal reply state
+  const [replyingMsg, setReplyingMsg] = useState(null);
+  const [replyText, setReplyText] = useState('');
+  const [replyLoading, setReplyLoading] = useState(false);
+  const [replyError, setReplyError] = useState('');
+  const [openGmailOnSend, setOpenGmailOnSend] = useState(true);
+
+  const handleSendReply = async (e, shouldOpenGmail = openGmailOnSend) => {
+    if (e && e.preventDefault) e.preventDefault();
+    if (!replyText.trim() || !replyingMsg) return;
+    setReplyLoading(true);
+    setReplyError('');
+    try {
+      const authToken = token || localStorage.getItem('gecwc_token');
+      const res = await fetch(`/api/admin/contact-messages/${replyingMsg.id}/reply`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ replyMessage: replyText })
+      });
+      const resData = await res.json();
+      if (!res.ok) throw new Error(resData.error || 'Failed to send reply');
+
+      setActionMsg(`In-portal reply sent to ${replyingMsg.name} successfully!`);
+
+      // Open Gmail compose pre-filled with the exact reply so the student receives it in their personal inbox!
+      if (shouldOpenGmail) {
+        const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(replyingMsg.email)}&su=${encodeURIComponent('Re: ' + replyingMsg.subject + ' - GECWC Academics')}&body=${encodeURIComponent(replyText.trim())}`;
+        window.open(gmailUrl, '_blank', 'noopener,noreferrer');
+      }
+
+      setReplyingMsg(null);
+      setReplyText('');
+      loadDashboard();
+      setTimeout(() => setActionMsg(''), 4000);
+    } catch (err) {
+      setReplyError(err.message);
+    } finally {
+      setReplyLoading(false);
+    }
+  };
 
   const loadDashboard = async () => {
     try {
@@ -78,6 +145,7 @@ export default function AdminDashboard({
   const metrics = data?.metrics || {};
   const pendingQueue = data?.pendingQueue || [];
   const recentLogs = data?.recentLogs || [];
+  const recentMessages = data?.recentMessages || [];
 
   return (
     <div className="space-y-8 animate-fade-in">
@@ -242,38 +310,141 @@ export default function AdminDashboard({
         </div>
       </div>
 
-      {/* Student Inquiries & Contact Messages Quick Banner */}
-      <div
-        onClick={() => setActiveAdminTab('messages')}
-        className="cursor-pointer bg-gradient-to-r from-indigo-950 via-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-2xl border border-indigo-900 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:border-indigo-600 transition"
-      >
-        <div className="flex items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold shrink-0">
-            <MessageSquare className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-bold text-sm text-white">Student & Faculty Inquiries Inbox</span>
-              {metrics.unreadMessages > 0 ? (
-                <span className="bg-amber-400 text-slate-950 text-[10px] font-black px-2 py-0.5 rounded-full uppercase">
-                  {metrics.unreadMessages} New
-                </span>
-              ) : (
-                <span className="bg-emerald-500/20 text-emerald-300 text-[10px] font-semibold px-2 py-0.5 rounded-full">
-                  All Read
-                </span>
-              )}
+      {/* Student & Faculty Inquiries Section (Direct on Dashboard) */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden">
+        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-gradient-to-r from-slate-900 to-indigo-950 text-white">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-amber-400 text-slate-950 flex items-center justify-center font-bold">
+              <MessageSquare className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-300 mt-0.5">
-              Review and reply to private messages sent by students through the Contact Us form.
-            </p>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-white">
+                  Student & Faculty Inquiries Inbox
+                </h2>
+                {metrics.unreadMessages > 0 ? (
+                  <span className="bg-amber-400 text-slate-950 font-black px-2 py-0.5 rounded-full text-xs font-mono animate-pulse">
+                    {metrics.unreadMessages} New
+                  </span>
+                ) : (
+                  <span className="bg-emerald-500/30 text-emerald-300 font-semibold px-2 py-0.5 rounded-full text-xs">
+                    All Caught Up
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-slate-300 mt-0.5">
+                Direct messages submitted via the Contact Us form. Delivered straight to your administrator desk.
+              </p>
+            </div>
           </div>
+
+          <button
+            onClick={() => setActiveAdminTab('messages')}
+            className="text-xs font-bold text-amber-300 hover:text-amber-200 flex items-center gap-1 self-start sm:self-auto bg-slate-800/80 hover:bg-slate-800 px-3.5 py-1.5 rounded-xl border border-slate-700 transition"
+          >
+            <span>Open Dedicated Inquiries Tab</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </button>
         </div>
 
-        <div className="flex items-center gap-1.5 text-xs font-semibold text-amber-300 hover:text-amber-200 self-end sm:self-center">
-          <span>Open Inbox</span>
-          <ArrowRight className="w-4 h-4" />
-        </div>
+        {recentMessages.length === 0 ? (
+          <div className="p-8 text-center text-xs text-slate-400">
+            No inquiries received yet. When students submit the Contact Us form, their messages will appear right here!
+          </div>
+        ) : (
+          <div className="divide-y divide-slate-100">
+            {recentMessages.map((msg) => {
+              const isUnread = msg.status === 'unread';
+              const formattedDate = new Date(msg.created_at).toLocaleString('en-IN', {
+                dateStyle: 'medium',
+                timeStyle: 'short'
+              });
+              const replyMailto = `mailto:${msg.email}?subject=${encodeURIComponent(
+                `Re: [GECWC Academics] ${msg.subject}`
+              )}&body=${encodeURIComponent(
+                `Dear ${msg.name},\n\nThank you for reaching out through the GECWC Academics Portal.\n\n---\nRegarding your message:\n"${msg.message}"\n\n\n\nBest regards,\nShubh Kumar Jha\nLead Developer & Administrator\nGovernment Engineering College, West Champaran`
+              )}`;
+
+              return (
+                <div
+                  key={msg.id}
+                  className={`p-4 sm:p-5 flex flex-col md:flex-row md:items-start justify-between gap-4 transition ${
+                    isUnread ? 'bg-amber-50/40 hover:bg-amber-50/70' : 'hover:bg-slate-50/60'
+                  }`}
+                >
+                  <div className="space-y-2 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="font-extrabold text-sm text-slate-900">{msg.name}</span>
+                      {isUnread && (
+                        <span className="bg-amber-100 text-amber-900 border border-amber-300 font-extrabold px-2 py-0.2 rounded-full text-[10px] uppercase tracking-wider">
+                          Unread
+                        </span>
+                      )}
+                      <span className="text-xs bg-blue-50 text-blue-700 font-medium px-2 py-0.5 rounded-md border border-blue-100">
+                        {msg.subject}
+                      </span>
+                      <span className="text-xs text-slate-500 font-mono">
+                        ({msg.email})
+                      </span>
+                    </div>
+
+                    <div className="bg-white p-3.5 rounded-xl border border-slate-200 text-xs text-slate-800 leading-relaxed font-sans shadow-2xs whitespace-pre-wrap">
+                      {msg.message}
+                    </div>
+
+                    {/* Display existing in-portal reply if sent */}
+                    {msg.admin_reply && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-3.5 space-y-1 text-xs text-emerald-950">
+                        <div className="flex items-center gap-1.5 font-bold text-emerald-800 text-[11px]">
+                          <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Admin Response by {msg.replied_by || 'Shubh Kumar Jha'}</span>
+                          {msg.replied_at && (
+                            <span className="text-[10px] text-emerald-600 font-normal">
+                              • {new Date(msg.replied_at).toLocaleString('en-IN', { dateStyle: 'short', timeStyle: 'short' })}
+                            </span>
+                          )}
+                        </div>
+                        <p className="whitespace-pre-wrap leading-relaxed">{msg.admin_reply}</p>
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                      <Clock className="w-3 h-3 text-slate-400" />
+                      <span>{formattedDate}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
+                    {msg.admin_reply && (
+                      <a
+                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(msg.email)}&su=${encodeURIComponent('Re: ' + msg.subject + ' - GECWC Academics')}&body=${encodeURIComponent(msg.admin_reply)}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold py-1.5 px-3 rounded-lg text-xs border border-amber-200 transition"
+                        title="Send or re-send this response to student's Gmail"
+                      >
+                        <Mail className="w-3.5 h-3.5 text-amber-600" />
+                        <span>Send via Gmail</span>
+                      </a>
+                    )}
+
+                    <button
+                      onClick={() => {
+                        setReplyingMsg(msg);
+                        setReplyText(msg.admin_reply || getDefaultReplyTemplate(msg, 'general'));
+                        setReplyError('');
+                      }}
+                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5" />
+                      <span>{msg.admin_reply ? 'Edit Reply' : 'Reply Directly (In-Portal)'}</span>
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Direct Pending Approval Section (Requirement 9) */}
@@ -397,6 +568,146 @@ export default function AdminDashboard({
           ))}
         </div>
       </div>
+
+      {/* In-Portal Reply Modal */}
+      {replyingMsg && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 animate-scale-in">
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div>
+                <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider bg-indigo-50 px-2 py-0.5 rounded">
+                  In-Portal Direct Response
+                </span>
+                <h3 className="text-lg font-black text-slate-900 mt-1">
+                  Reply to {replyingMsg.name}
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Topic: <strong className="text-slate-700">{replyingMsg.subject}</strong> ({replyingMsg.email})
+                </p>
+              </div>
+              <button
+                onClick={() => setReplyingMsg(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Original Message Quote */}
+            <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 text-xs text-slate-700 max-h-32 overflow-y-auto">
+              <span className="text-[10px] font-bold uppercase text-slate-400 block mb-1">Student's Inquiry:</span>
+              <p className="whitespace-pre-wrap italic">"{replyingMsg.message}"</p>
+            </div>
+
+            {/* Direct Email Delivery Guidance */}
+            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-amber-800 text-[11px] uppercase tracking-wider">
+                <Mail className="w-3.5 h-3.5 text-amber-600" />
+                <span>Direct Delivery to Student's Gmail Inbox</span>
+              </div>
+              <p className="text-[11px] text-amber-900 leading-relaxed">
+                Clicking <strong>"Deliver via Gmail"</strong> saves your reply in the database AND opens your Gmail with this exact response pre-filled, so you can send it directly to <strong>{replyingMsg.email}</strong> in 1 click!
+              </p>
+            </div>
+
+            {replyError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 text-xs rounded-xl flex items-center gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{replyError}</span>
+              </div>
+            )}
+
+            <form onSubmit={(e) => handleSendReply(e, openGmailOnSend)} className="space-y-4">
+              {/* Quick Template Selector Chips */}
+              <div className="space-y-1.5">
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Quick Reply Templates:
+                </span>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => setReplyText(getDefaultReplyTemplate(replyingMsg, 'general'))}
+                    className="px-2.5 py-1 text-[11px] font-semibold bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition"
+                  >
+                    📝 Default Format
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplyText(getDefaultReplyTemplate(replyingMsg, 'notes_added'))}
+                    className="px-2.5 py-1 text-[11px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-lg transition"
+                  >
+                    📚 Notes Published
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setReplyText(getDefaultReplyTemplate(replyingMsg, 'resolved'))}
+                    className="px-2.5 py-1 text-[11px] font-semibold bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg transition"
+                  >
+                    ✅ Issue Resolved
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                  Your Response (Pre-formatted • Ready to Edit) *
+                </label>
+                <textarea
+                  required
+                  rows={9}
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder={`Write your answer, guidance, or resolution for ${replyingMsg.name}...`}
+                  className="w-full p-3 text-xs rounded-xl border border-slate-300 focus:outline-indigo-600 leading-relaxed font-sans"
+                />
+              </div>
+
+              {/* Delivery Options & Action Buttons */}
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 select-none">
+                  <input
+                    type="checkbox"
+                    checked={openGmailOnSend}
+                    onChange={(e) => setOpenGmailOnSend(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
+                  />
+                  <span className="text-[11px] font-medium text-slate-600">
+                    Open Gmail compose on send (To: <strong className="text-slate-800">{replyingMsg.email}</strong>)
+                  </span>
+                </label>
+
+                <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                  <button
+                    type="button"
+                    onClick={() => setReplyingMsg(null)}
+                    className="px-3.5 py-2 text-xs font-semibold text-slate-600 hover:text-slate-900 border border-slate-200 rounded-xl hover:bg-slate-50 transition"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={replyLoading}
+                    onClick={(e) => handleSendReply(e, false)}
+                    className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition disabled:opacity-50"
+                    title="Save in database only without opening Gmail"
+                  >
+                    Save In-Portal Only
+                  </button>
+                  <button
+                    type="button"
+                    disabled={replyLoading}
+                    onClick={(e) => handleSendReply(e, true)}
+                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition disabled:opacity-50"
+                  >
+                    <Mail className="w-3.5 h-3.5" />
+                    <span>{replyLoading ? 'Recording Reply...' : 'Deliver via Gmail & Save'}</span>
+                  </button>
+                </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

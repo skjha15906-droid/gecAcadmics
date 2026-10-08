@@ -27,7 +27,7 @@ export default function Footer({ setCurrentRoute, onSelectSemester }) {
 
             <div className="flex items-center gap-2 text-xs text-slate-400 bg-slate-800/80 px-3 py-2 rounded-md border border-slate-700 w-fit">
               <MapPin className="w-4 h-4 text-amber-400 shrink-0" />
-              <span>GEC West Champaran, Bakwa, Bettiah, Bihar - 845438</span>
+              <span>GEC West Champaran, Kumarbagh, Bettiah, Bihar - 845450</span>
             </div>
 
             <div className="flex items-center gap-2 text-xs text-emerald-400">
