@@ -87,7 +87,7 @@ export default function LoginPage({ setCurrentRoute }) {
               mode === 'login' ? 'bg-white text-blue-700 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            Student & Admin Login
+            Sign In
           </button>
           <button
             type="button"
@@ -96,7 +96,7 @@ export default function LoginPage({ setCurrentRoute }) {
               mode === 'register' ? 'bg-white text-blue-700 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-900'
             }`}
           >
-            New Student Register
+            Register Student
           </button>
         </div>
 
@@ -184,7 +184,7 @@ export default function LoginPage({ setCurrentRoute }) {
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder={mode === 'register' ? 'e.g. student@gecwc.ac.in' : 'e.g. pacifist or admin@gecwc.ac.in'}
+                placeholder={mode === 'register' ? 'e.g. rollno@gecwc.ac.in' : 'Enter email or username'}
                 className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-blue-600"
               />
             </div>
