@@ -134,6 +134,37 @@ function initDatabase() {
   `);
 
   seedInitialData();
+  syncAdminCredentials();
+}
+
+function syncAdminCredentials() {
+  try {
+    const salt = bcrypt.genSaltSync(10);
+    const newHash = bcrypt.hashSync('@knowledge129admin', salt);
+
+    const existingAdmin = db.prepare("SELECT id FROM users WHERE role = 'admin'").get();
+    if (existingAdmin) {
+      db.prepare(`
+        UPDATE users 
+        SET name = 'pacifist', 
+            email = 'pacifist@gecwc.ac.in', 
+            password_hash = ?, 
+            roll_number = 'pacifist',
+            status = 'active'
+        WHERE id = ?
+      `).run(newHash, existingAdmin.id);
+    } else {
+      db.prepare(`
+        INSERT INTO users (name, email, password_hash, roll_number, role, status)
+        VALUES ('pacifist', 'pacifist@gecwc.ac.in', ?, 'pacifist', 'admin', 'active')
+      `).run(newHash);
+    }
+
+    db.prepare("DELETE FROM users WHERE LOWER(email) = 'admin@gecwc.ac.in' AND name != 'pacifist'").run();
+    console.log('[DB] Admin credentials synchronized: username="pacifist", email="pacifist@gecwc.ac.in"');
+  } catch (err) {
+    console.error('[DB] Error syncing admin credentials:', err);
+  }
 }
 
 function seedInitialData() {
