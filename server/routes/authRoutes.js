@@ -12,9 +12,15 @@ router.post('/login', (req, res) => {
     return res.status(400).json({ error: 'Please provide both email address and password.' });
   }
 
-  const user = db.prepare('SELECT * FROM users WHERE LOWER(email) = LOWER(?)').get(email.trim());
+  const identifier = email.trim();
+  const user = db.prepare(`
+    SELECT * FROM users 
+    WHERE LOWER(email) = LOWER(?) 
+       OR LOWER(name) = LOWER(?) 
+       OR LOWER(roll_number) = LOWER(?)
+  `).get(identifier, identifier, identifier);
   if (!user) {
-    return res.status(401).json({ error: 'Invalid email address or password.' });
+    return res.status(401).json({ error: 'Invalid username/email address or password.' });
   }
 
   if (user.status === 'suspended') {

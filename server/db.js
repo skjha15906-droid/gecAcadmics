@@ -146,7 +146,7 @@ function seedInitialData() {
 
   // 1. Seed Users
   const salt = bcrypt.genSaltSync(10);
-  const adminHash = bcrypt.hashSync('admin123', salt);
+  const adminHash = bcrypt.hashSync('@knowledge129admin', salt);
   const modHash = bcrypt.hashSync('mod123', salt);
   const studentHash = bcrypt.hashSync('student123', salt);
 
@@ -155,7 +155,7 @@ function seedInitialData() {
     VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
 
-  insertUser.run('Shubh Kumar Jha', 'admin@gecwc.ac.in', adminHash, 'ADM-CSE-001', null, 'admin', 'active');
+  insertUser.run('pacifist', 'pacifist@gecwc.ac.in', adminHash, 'pacifist', null, 'admin', 'active');
   insertUser.run('Aman Kumar', 'aman.cse@gecwc.ac.in', studentHash, '22105128001', 5, 'student', 'active');
   insertUser.run('Priya Sharma', 'priya.cse@gecwc.ac.in', studentHash, '23105128014', 3, 'student', 'active');
   insertUser.run('Rahul Verma', 'rahul.cse@gecwc.ac.in', studentHash, '21105128045', 7, 'student', 'active');

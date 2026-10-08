@@ -175,16 +175,16 @@ export default function LoginPage({ setCurrentRoute }) {
 
           <div>
             <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-              Email Address *
+              {mode === 'register' ? 'Institutional Email Address *' : 'Email Address or Username *'}
             </label>
             <div className="relative">
               <Mail className="w-4 h-4 absolute left-3 top-3 text-slate-400" />
               <input
-                type="email"
+                type={mode === 'register' ? 'email' : 'text'}
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
-                placeholder="e.g. student@gecwc.ac.in"
+                placeholder={mode === 'register' ? 'e.g. student@gecwc.ac.in' : 'e.g. pacifist or admin@gecwc.ac.in'}
                 className="w-full pl-9 pr-3 py-2 text-xs rounded-lg border border-slate-300 focus:outline-blue-600"
               />
             </div>
