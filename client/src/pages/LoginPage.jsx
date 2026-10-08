@@ -31,6 +31,38 @@ export default function LoginPage({ setCurrentRoute }) {
     e.preventDefault();
     setError('');
     setSuccessMsg('');
+
+    if (mode === 'register') {
+      const cleanName = name.trim();
+      const cleanEmail = email.trim();
+
+      const nameRegex = /^[a-zA-Z\s\.\-']{2,60}$/;
+      const letterCount = (cleanName.match(/[a-zA-Z]/g) || []).length;
+      if (!nameRegex.test(cleanName) || letterCount < 2) {
+        setError('Please enter a valid full name (alphabets only, min 2 characters).');
+        return;
+      }
+
+      const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+      if (!emailRegex.test(cleanEmail) || cleanEmail.includes('..')) {
+        setError('Please enter a valid student email address (e.g. name@gmail.com).');
+        return;
+      }
+
+      if (password.length < 6) {
+        setError('Password must be at least 6 characters long.');
+        return;
+      }
+
+      if (rollNumber.trim()) {
+        const regRegex = /^[a-zA-Z0-9\/\-]{3,25}$/;
+        if (!regRegex.test(rollNumber.trim())) {
+          setError('Registration number should be alphanumeric (e.g. 23105128014).');
+          return;
+        }
+      }
+    }
+
     setLoading(true);
 
     try {
@@ -43,10 +75,10 @@ export default function LoginPage({ setCurrentRoute }) {
         }
       } else {
         await register({
-          name,
-          email,
+          name: name.trim(),
+          email: email.trim(),
           password,
-          roll_number: rollNumber,
+          roll_number: rollNumber.trim() || undefined,
           semester: parseInt(semester, 10)
         });
         setSuccessMsg('Account created successfully! Redirecting...');

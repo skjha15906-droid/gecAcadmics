@@ -57,16 +57,35 @@ router.post('/register', (req, res) => {
     return res.status(400).json({ error: 'Name, email, and password are required.' });
   }
 
+  const cleanName = name.trim();
   const cleanEmail = email.trim().toLowerCase();
 
-  // Basic email validation
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(cleanEmail)) {
-    return res.status(400).json({ error: 'Please provide a valid student email address.' });
+  // 1. Strict Name Validation (Real human name: 2-60 chars, letters, spaces, dots, hyphens, min 2 alphabets)
+  const nameRegex = /^[a-zA-Z\s\.\-']{2,60}$/;
+  const letterCount = (cleanName.match(/[a-zA-Z]/g) || []).length;
+  if (!nameRegex.test(cleanName) || letterCount < 2) {
+    return res.status(400).json({ error: 'Please provide a valid student name (alphabets only, minimum 2 letters).' });
   }
 
+  // 2. Strict RFC-compliant Email Validation
+  const emailRegex = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
+  if (!emailRegex.test(cleanEmail) || cleanEmail.length > 100 || cleanEmail.includes('..')) {
+    return res.status(400).json({ error: 'Please provide a valid student email address (e.g. name@gmail.com).' });
+  }
+
+  // 3. Password length
   if (password.length < 6) {
     return res.status(400).json({ error: 'Password must be at least 6 characters long.' });
+  }
+
+  // 4. Registration Number Validation (if provided)
+  let cleanRoll = null;
+  if (roll_number && roll_number.trim()) {
+    cleanRoll = roll_number.trim();
+    const regRegex = /^[a-zA-Z0-9\/\-]{3,25}$/;
+    if (!regRegex.test(cleanRoll)) {
+      return res.status(400).json({ error: 'Registration number should be alphanumeric (e.g. 23105128014).' });
+    }
   }
 
   const existing = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(cleanEmail);
@@ -87,7 +106,7 @@ router.post('/register', (req, res) => {
     VALUES (?, ?, ?, ?, ?, 'student', 'active')
   `);
 
-  const result = insert.run(name.trim(), cleanEmail, passwordHash, roll_number ? roll_number.trim() : null, semNum);
+  const result = insert.run(cleanName, cleanEmail, passwordHash, cleanRoll, semNum);
 
   const newUser = {
     id: result.lastInsertRowid,
