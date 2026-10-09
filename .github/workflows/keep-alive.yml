@@ -1,0 +1,16 @@
+name: Keep Render Alive 24/7
+
+on:
+  schedule:
+    # Run every 10 minutes to prevent Render free instance from spinning down
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+jobs:
+  keep-alive:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send keep-alive ping to Render
+        run: |
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "https://gecacadmics.onrender.com/api/health")
+          echo "Render Health Ping Status: $STATUS"
