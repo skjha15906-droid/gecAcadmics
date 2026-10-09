@@ -375,11 +375,33 @@ router.get('/:id/download', (req, res) => {
   }
 });
 
+function ensureNoteReviewsTable() {
+  try {
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS note_reviews (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_name TEXT NOT NULL,
+        rating INTEGER DEFAULT 5,
+        review_type TEXT NOT NULL DEFAULT 'feedback',
+        issue_category TEXT,
+        comment TEXT NOT NULL,
+        status TEXT DEFAULT 'visible',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      );
+    `);
+  } catch (e) {
+    console.warn('[NoteReviews] table creation warning:', e.message);
+  }
+}
+
 // GET /api/notes/:id/reviews - Get reviews and problem reports for a note
 router.get('/:id/reviews', (req, res) => {
   const noteId = req.params.id;
 
   try {
+    ensureNoteReviewsTable();
     const reviews = db.prepare(`
       SELECT id, note_id, user_id, user_name, rating, review_type, issue_category, comment, created_at
       FROM note_reviews
@@ -425,12 +447,13 @@ router.post('/:id/reviews', requireAuth, (req, res) => {
   const validTypes = ['feedback', 'problem'];
   const cleanType = validTypes.includes(review_type) ? review_type : 'feedback';
 
-  const note = db.prepare('SELECT id, title FROM notes WHERE id = ?').get(noteId);
-  if (!note) {
-    return res.status(404).json({ error: 'Note not found.' });
-  }
-
   try {
+    ensureNoteReviewsTable();
+    const note = db.prepare('SELECT id, title FROM notes WHERE id = ?').get(noteId);
+    if (!note) {
+      return res.status(404).json({ error: 'Note not found.' });
+    }
+
     const insertReview = db.prepare(`
       INSERT INTO note_reviews (note_id, user_id, user_name, rating, review_type, issue_category, comment, status)
       VALUES (?, ?, ?, ?, ?, ?, ?, 'visible')

@@ -27,11 +27,12 @@ function reloadDatabase() {
   currentDb = new Database(dbPath);
   currentDb.pragma('journal_mode = WAL');
   currentDb.pragma('foreign_keys = ON');
+  ensureSchema();
   syncAdminCredentials();
   console.log('[DB] Database reloaded successfully via proxy.');
 }
 
-function initDatabase() {
+function ensureSchema() {
   db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -166,7 +167,10 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+}
 
+function initDatabase() {
+  ensureSchema();
   seedInitialData();
   syncAdminCredentials();
 }
@@ -764,5 +768,6 @@ module.exports = {
   dbPath,
   initDatabase,
   reloadDatabase,
-  closeDatabase
+  closeDatabase,
+  ensureSchema
 };
