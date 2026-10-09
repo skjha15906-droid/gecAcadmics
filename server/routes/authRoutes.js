@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const { db } = require('../db');
+const { triggerCloudBackup } = require('../cloudSync');
 const { generateToken, requireAuth } = require('../middleware/auth');
 
 // POST /api/auth/login
@@ -107,6 +108,9 @@ router.post('/register', (req, res) => {
   `);
 
   const result = insert.run(cleanName, cleanEmail, passwordHash, cleanRoll, semNum);
+
+  // Trigger cloud backup so new user is immediately persisted to cloud
+  triggerCloudBackup();
 
   const newUser = {
     id: result.lastInsertRowid,

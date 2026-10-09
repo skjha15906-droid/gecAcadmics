@@ -4,11 +4,28 @@ const fs = require('fs');
 const bcrypt = require('bcryptjs');
 
 const dbPath = path.join(__dirname, 'database.sqlite');
-const db = new Database(dbPath);
+let currentDb = new Database(dbPath);
+currentDb.pragma('journal_mode = WAL');
+currentDb.pragma('foreign_keys = ON');
 
-// Enable foreign keys and WAL mode for reliability and speed
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+// Dynamic proxy so all routes automatically use currentDb across reloads
+const db = new Proxy({}, {
+  get(target, prop) {
+    const val = currentDb[prop];
+    return typeof val === 'function' ? val.bind(currentDb) : val;
+  }
+});
+
+function reloadDatabase() {
+  try {
+    currentDb.close();
+  } catch (_) {}
+  currentDb = new Database(dbPath);
+  currentDb.pragma('journal_mode = WAL');
+  currentDb.pragma('foreign_keys = ON');
+  syncAdminCredentials();
+  console.log('[DB] Database reloaded successfully via proxy.');
+}
 
 function initDatabase() {
   db.exec(`
@@ -727,5 +744,7 @@ function seedInitialData() {
 
 module.exports = {
   db,
-  initDatabase
+  dbPath,
+  initDatabase,
+  reloadDatabase
 };

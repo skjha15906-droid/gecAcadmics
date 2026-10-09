@@ -2,9 +2,16 @@ const express = require('express');
 const router = express.Router();
 const fs = require('fs');
 const path = require('path');
-const { db } = require('../db');
+const multer = require('multer');
+const { db, dbPath, reloadDatabase } = require('../db');
+const { getSyncStatus, triggerCloudBackup, performCloudBackup } = require('../cloudSync');
 const { requireAuth, requireRole, logActivity } = require('../middleware/auth');
 const { sendAdminReplyToStudent } = require('../utils/emailService');
+
+const uploadDb = multer({
+  dest: path.join(__dirname, '..', 'uploads'),
+  limits: { fileSize: 50 * 1024 * 1024 }
+});
 
 // All admin routes require admin role
 router.use(requireAuth);
@@ -747,6 +754,122 @@ router.delete('/contact-messages/:id', (req, res) => {
   logActivity(req.user.id, req.user.name, req.user.role, 'DELETE_CONTACT_MESSAGE', 'contact_messages', id, `Deleted inquiry from ${msg.name} (${msg.email})`);
 
   res.json({ success: true, message: 'Message deleted successfully.' });
+});
+
+// ==========================================
+// DATABASE BACKUP & CLOUD RESTORE ENDPOINTS
+// ==========================================
+
+// GET /api/admin/database/backup - Download fresh SQLite database
+router.get('/database/backup', (req, res) => {
+  try {
+    // Flush WAL to main database file so downloaded file is 100% complete
+    db.pragma('wal_checkpoint(TRUNCATE)');
+
+    const dateStr = new Date().toISOString().slice(0, 10);
+    const filename = `gecwc-academics-backup-${dateStr}.sqlite`;
+
+    res.download(dbPath, filename, (err) => {
+      if (err) {
+        console.error('Error downloading database backup:', err);
+      } else {
+        logActivity(req.user.id, req.user.name, req.user.role, 'DOWNLOAD_DATABASE_BACKUP', 'system', 'database', 'Downloaded system database backup');
+      }
+    });
+  } catch (err) {
+    console.error('Backup generation error:', err);
+    res.status(500).json({ error: 'Failed to create database backup: ' + err.message });
+  }
+});
+
+// POST /api/admin/database/restore - Upload and restore SQLite database file
+router.post('/database/restore', uploadDb.single('database_file'), (req, res) => {
+  if (!req.file) {
+    return res.status(400).json({ error: 'Please choose an SQLite (.sqlite or .db) backup file to upload.' });
+  }
+
+  const tempPath = req.file.path;
+  try {
+    // Validate SQLite file header magic bytes ("SQLite format 3\0")
+    const fd = fs.openSync(tempPath, 'r');
+    const headerBuffer = Buffer.alloc(16);
+    fs.readSync(fd, headerBuffer, 0, 16, 0);
+    fs.closeSync(fd);
+
+    if (headerBuffer.toString('utf8', 0, 15) !== 'SQLite format 3') {
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      return res.status(400).json({ error: 'Invalid file format. The uploaded file is not a valid SQLite 3 database.' });
+    }
+
+    // Backup current database just in case
+    const backupOldPath = dbPath + '.pre-restore.bak';
+    try {
+      fs.copyFileSync(dbPath, backupOldPath);
+    } catch (_) {}
+
+    // Copy new file over dbPath
+    fs.copyFileSync(tempPath, dbPath);
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+
+    // Remove stale WAL/SHM
+    try {
+      if (fs.existsSync(dbPath + '-wal')) fs.unlinkSync(dbPath + '-wal');
+      if (fs.existsSync(dbPath + '-shm')) fs.unlinkSync(dbPath + '-shm');
+    } catch (_) {}
+
+    // Reload database in memory via proxy
+    reloadDatabase();
+
+    // Trigger cloud backup if configured
+    triggerCloudBackup();
+
+    logActivity(req.user.id, req.user.name, req.user.role, 'RESTORE_DATABASE', 'system', 'database', 'Restored system database from uploaded backup file');
+
+    res.json({
+      success: true,
+      message: 'Database restored successfully! All users, notes, and records have been reloaded.'
+    });
+  } catch (err) {
+    if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+    console.error('Database restore error:', err);
+    res.status(500).json({ error: 'Failed to restore database: ' + err.message });
+  }
+});
+
+// GET /api/admin/database/status - Retrieve database statistics and cloud sync telemetry
+router.get('/database/status', (req, res) => {
+  try {
+    const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+    const noteCount = db.prepare('SELECT COUNT(*) as count FROM notes').get().count;
+    const subjectCount = db.prepare('SELECT COUNT(*) as count FROM subjects').get().count;
+    const syncInfo = getSyncStatus();
+
+    res.json({
+      success: true,
+      userCount,
+      noteCount,
+      subjectCount,
+      syncInfo
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/database/sync - Manually trigger an instant cloud sync
+router.post('/database/sync', async (req, res) => {
+  try {
+    const success = await performCloudBackup();
+    const syncInfo = getSyncStatus();
+    if (success) {
+      logActivity(req.user.id, req.user.name, req.user.role, 'CLOUD_SYNC_DATABASE', 'system', 'database', 'Manually synchronized database to cloud backup');
+      res.json({ success: true, message: 'Cloud backup synced successfully to GitHub Gist!', syncInfo });
+    } else {
+      res.status(400).json({ error: syncInfo.lastError || syncInfo.status, syncInfo });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 module.exports = router;

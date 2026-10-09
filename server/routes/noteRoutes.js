@@ -4,6 +4,7 @@ const multer = require('multer');
 const path = require('path');
 const fs = require('fs');
 const { db } = require('../db');
+const { triggerCloudBackup } = require('../cloudSync');
 const { requireAuth, optionalAuth } = require('../middleware/auth');
 
 // Multer storage configuration
@@ -405,6 +406,8 @@ router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
       req.user.id,
       req.user.name
     );
+
+    triggerCloudBackup();
 
     res.status(201).json({
       success: true,

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../../context/AuthContext';
-import { Settings, Save, CheckCircle, AlertTriangle, ShieldCheck, FileCheck } from 'lucide-react';
+import { Settings, Save, CheckCircle, AlertTriangle, ShieldCheck, FileCheck, Database, Download, Upload, Cloud, RefreshCw } from 'lucide-react';
 
 export default function AdminSettings() {
   const { token, user } = useAuth();
+  const fileInputRef = useRef(null);
   const [settings, setSettings] = useState({
     college_name: 'Government Engineering College, West Champaran',
     branch_name: 'Computer Science & Engineering',
@@ -19,6 +20,26 @@ export default function AdminSettings() {
   const [saving, setSaving] = useState(false);
   const [notification, setNotification] = useState('');
   const [error, setError] = useState('');
+
+  // Database Backup & Cloud Sync state
+  const [dbStatus, setDbStatus] = useState(null);
+  const [dbLoading, setDbLoading] = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [syncing, setSyncing] = useState(false);
+
+  const fetchDbStatus = async () => {
+    try {
+      const res = await fetch('/api/admin/database/status', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDbStatus(data);
+      }
+    } catch (e) {
+      console.error('Failed to load database status:', e);
+    }
+  };
 
   useEffect(() => {
     async function fetchSettings() {
@@ -38,8 +59,92 @@ export default function AdminSettings() {
         setLoading(false);
       }
     }
-    if (token) fetchSettings();
+    if (token) {
+      fetchSettings();
+      fetchDbStatus();
+    }
   }, [token]);
+
+  const handleDownloadBackup = async () => {
+    try {
+      setDbLoading(true);
+      const res = await fetch('/api/admin/database/backup', {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (!res.ok) throw new Error('Failed to generate backup');
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `gecwc-academics-backup-${new Date().toISOString().slice(0, 10)}.sqlite`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+      setNotification('✅ Database backup (.sqlite) downloaded successfully!');
+      setTimeout(() => setNotification(''), 4000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setDbLoading(false);
+    }
+  };
+
+  const handleRestoreFile = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm(`⚠️ RESTORE DATABASE WARNING:\n\nAre you sure you want to restore "${file.name}"?\nThis will overwrite current users and notes with the backup data.\n\nDo you want to proceed?`)) {
+      if (fileInputRef.current) fileInputRef.current.value = '';
+      return;
+    }
+
+    setRestoring(true);
+    setError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('database_file', file);
+
+      const res = await fetch('/api/admin/database/restore', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` },
+        body: formData
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Restore failed');
+
+      setNotification(`🎉 ${data.message}`);
+      fetchDbStatus();
+      setTimeout(() => setNotification(''), 5000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setRestoring(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
+  const handleManualSync = async () => {
+    setSyncing(true);
+    setError('');
+    try {
+      const res = await fetch('/api/admin/database/sync', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Sync failed');
+      setNotification('✅ ' + data.message);
+      fetchDbStatus();
+      setTimeout(() => setNotification(''), 4000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -212,6 +317,115 @@ export default function AdminSettings() {
                 All uploaded materials are held in Pending Moderation. Direct publishing by students is strictly blocked by the backend API.
               </span>
             </div>
+          </div>
+        </div>
+
+        {/* 4. Zero Data Loss - Database Backup & Cloud Sync */}
+        <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+            <div>
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-indigo-600" />
+                <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                  4. Database Safety & Cloud Backup (Zero Data Loss)
+                </h3>
+              </div>
+              <p className="text-[11px] text-slate-500 mt-0.5">
+                Protect all student registrations, approved notes, and academic syllabi from accidental loss across deployments.
+              </p>
+            </div>
+
+            {dbStatus && (
+              <span className="text-[10px] font-bold px-2.5 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-lg shrink-0">
+                Live Data: {dbStatus.userCount || 0} Users • {dbStatus.noteCount || 0} Notes
+              </span>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Download Backup */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <Download className="w-4 h-4 text-emerald-600" />
+                  1-Click Database Download
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Download a snapshot of the live SQLite database (.sqlite) containing all active user accounts, syllabi, and note records.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleDownloadBackup}
+                disabled={dbLoading}
+                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-2 shadow-2xs disabled:opacity-50"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{dbLoading ? 'Generating Snapshot...' : 'Download Database (.sqlite)'}</span>
+              </button>
+            </div>
+
+            {/* Restore Database */}
+            <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-2 flex flex-col justify-between">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
+                  <Upload className="w-4 h-4 text-amber-600" />
+                  Restore / Upload Database
+                </h4>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Upload a previously saved .sqlite file to instantly restore all student accounts, notes, and records without server restarts.
+                </p>
+              </div>
+
+              <div>
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept=".sqlite,.db"
+                  onChange={handleRestoreFile}
+                  className="hidden"
+                />
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={restoring}
+                  className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold py-2 px-3 rounded-lg text-xs transition flex items-center justify-center gap-2 shadow-2xs disabled:opacity-50"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>{restoring ? 'Restoring Database...' : 'Upload & Restore (.sqlite)'}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Cloud Sync Telemetry Banner */}
+          <div className="p-3.5 bg-blue-50/70 border border-blue-200 rounded-xl text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="flex items-start gap-2.5">
+              <Cloud className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <strong className="block text-blue-950 font-bold text-xs">
+                  Automated 24/7 Cloud Sync:
+                </strong>
+                <span className="text-blue-800 text-[11px] leading-relaxed">
+                  {dbStatus?.syncInfo?.configured
+                    ? `Active! Last synced: ${dbStatus.syncInfo.lastSyncTime ? new Date(dbStatus.syncInfo.lastSyncTime).toLocaleTimeString() : 'Ready'}`
+                    : 'To enable automatic zero-touch cloud backups on Render, add GITHUB_BACKUP_TOKEN in your Render Environment Variables.'}
+                </span>
+              </div>
+            </div>
+
+            {dbStatus?.syncInfo?.configured && (
+              <button
+                type="button"
+                onClick={handleManualSync}
+                disabled={syncing}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold rounded-lg transition shrink-0 flex items-center gap-1.5 shadow-2xs"
+              >
+                <RefreshCw className={`w-3 h-3 ${syncing ? 'animate-spin' : ''}`} />
+                <span>{syncing ? 'Syncing...' : 'Sync Cloud Now'}</span>
+              </button>
+            )}
           </div>
         </div>
 

@@ -1,7 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
-const { initDatabase } = require('./db');
+const { initDatabase, reloadDatabase } = require('./db');
+const { restoreFromCloudOnBoot } = require('./cloudSync');
 
 const authRoutes = require('./routes/authRoutes');
 const academicRoutes = require('./routes/academicRoutes');
@@ -11,8 +12,9 @@ const adminRoutes = require('./routes/adminRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-// Initialize SQLite database
+// Initialize SQLite database and sync from cloud if configured
 initDatabase();
+restoreFromCloudOnBoot(reloadDatabase);
 
 // Middleware
 app.use(cors());
