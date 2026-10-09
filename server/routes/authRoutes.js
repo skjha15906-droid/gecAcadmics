@@ -109,8 +109,14 @@ router.post('/register', (req, res) => {
 
   const result = insert.run(cleanName, cleanEmail, passwordHash, cleanRoll, semNum);
 
-  // Trigger cloud backup so new user is immediately persisted to cloud
-  triggerCloudBackup();
+  // Flush WAL and immediately backup to cloud so student is never lost
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    const { performCloudBackup } = require('../cloudSync');
+    performCloudBackup().catch(err => console.error('[Register] Cloud backup error:', err.message));
+  } catch (e) {
+    console.warn('[Register] Cloud backup sync warning:', e.message);
+  }
 
   const newUser = {
     id: result.lastInsertRowid,

@@ -1,5 +1,6 @@
 const fs = require('fs');
 const path = require('path');
+const Database = require('better-sqlite3');
 
 const dbPath = path.join(__dirname, 'database.sqlite');
 const GIST_FILENAME = 'gecwc-academics-db.b64';
@@ -30,7 +31,8 @@ function getSyncStatus() {
 }
 
 /**
- * On server boot, try restoring database from GitHub Gist if available
+ * On server boot, safely restore database from GitHub Gist if available
+ * CRITICAL SAFEGUARD: Never overwrite local data if local has more users than cloud!
  */
 async function restoreFromCloudOnBoot(reloadCallback) {
   const token = getToken();
@@ -59,7 +61,6 @@ async function restoreFromCloudOnBoot(reloadCallback) {
     }
 
     if (!targetGist) {
-      // Find Gist by description
       const listRes = await fetch('https://api.github.com/gists', {
         headers: {
           Authorization: `Bearer ${token}`,
@@ -77,8 +78,9 @@ async function restoreFromCloudOnBoot(reloadCallback) {
     }
 
     if (!targetGist || !targetGist.files || !targetGist.files[GIST_FILENAME]) {
-      console.log('[CloudSync] No existing cloud backup found. Will create one on next database write.');
-      lastSyncStatus = 'No cloud backup found yet (will auto-create on write)';
+      console.log('[CloudSync] No cloud backup found yet. Will create initial backup from local database.');
+      lastSyncStatus = 'Creating initial cloud backup...';
+      await performCloudBackup();
       return false;
     }
 
@@ -92,7 +94,7 @@ async function restoreFromCloudOnBoot(reloadCallback) {
     }
 
     if (!b64Content) {
-      console.log('[CloudSync] Backup file was empty.');
+      console.log('[CloudSync] Cloud backup file was empty.');
       return false;
     }
 
@@ -103,20 +105,60 @@ async function restoreFromCloudOnBoot(reloadCallback) {
       return false;
     }
 
-    const localSize = fs.existsSync(dbPath) ? fs.statSync(dbPath).size : 0;
-    // If local database is smaller or missing, restore from cloud
-    console.log(`[CloudSync] Cloud backup found (${buffer.length} bytes, local: ${localSize} bytes). Restoring...`);
+    // Inspect cloud backup data in a temporary file
+    const tempCheckPath = dbPath + '.cloud-check.tmp';
+    fs.writeFileSync(tempCheckPath, buffer);
 
-    // Remove old WAL/SHM
+    let cloudUserCount = 0;
+    let cloudNoteCount = 0;
+    try {
+      const cloudDb = new Database(tempCheckPath, { readonly: true });
+      cloudUserCount = cloudDb.prepare('SELECT COUNT(*) as c FROM users').get().c;
+      cloudNoteCount = cloudDb.prepare('SELECT COUNT(*) as c FROM notes').get().c;
+      cloudDb.close();
+    } catch (e) {
+      console.error('[CloudSync] Failed to read downloaded database tables:', e.message);
+    }
+
+    // Inspect local database data
+    let localUserCount = 0;
+    let localNoteCount = 0;
+    if (fs.existsSync(dbPath)) {
+      try {
+        const localDb = new Database(dbPath, { readonly: true });
+        localUserCount = localDb.prepare('SELECT COUNT(*) as c FROM users').get().c;
+        localNoteCount = localDb.prepare('SELECT COUNT(*) as c FROM notes').get().c;
+        localDb.close();
+      } catch (e) {
+        console.warn('[CloudSync] Failed to inspect local database:', e.message);
+      }
+    }
+
+    console.log(`[CloudSync] Comparison: Cloud DB has ${cloudUserCount} users, ${cloudNoteCount} notes. Local DB has ${localUserCount} users, ${localNoteCount} notes.`);
+
+    // SAFEGUARD 1: If local database has MORE users, NEVER overwrite local!
+    // Instead, upload the newer local data to the cloud!
+    if (localUserCount > cloudUserCount) {
+      console.log(`[CloudSync] 🛡️ SAFEGUARD: Local database has more users (${localUserCount} > ${cloudUserCount}). Preserving local data and updating cloud backup!`);
+      try { if (fs.existsSync(tempCheckPath)) fs.unlinkSync(tempCheckPath); } catch (_) {}
+      await performCloudBackup();
+      return false;
+    }
+
+    // SAFEGUARD 2: If cloud has more or equal data, safely restore from cloud
+    console.log(`[CloudSync] Restoring cloud database (${cloudUserCount} users, ${cloudNoteCount} notes)...`);
+    fs.copyFileSync(tempCheckPath, dbPath);
+    try { if (fs.existsSync(tempCheckPath)) fs.unlinkSync(tempCheckPath); } catch (_) {}
+
+    // Clean stale WAL/SHM
     try {
       if (fs.existsSync(dbPath + '-wal')) fs.unlinkSync(dbPath + '-wal');
       if (fs.existsSync(dbPath + '-shm')) fs.unlinkSync(dbPath + '-shm');
     } catch (_) {}
 
-    fs.writeFileSync(dbPath, buffer);
     lastSyncTime = new Date().toISOString();
-    lastSyncStatus = 'Restored from cloud successfully';
-    console.log('[CloudSync] ✅ Successfully restored SQLite database from GitHub cloud backup!');
+    lastSyncStatus = `Synced (${cloudUserCount} users, ${cloudNoteCount} notes)`;
+    console.log(`[CloudSync] ✅ Successfully restored SQLite database from cloud (${cloudUserCount} users)!`);
 
     if (typeof reloadCallback === 'function') {
       reloadCallback();
@@ -131,7 +173,7 @@ async function restoreFromCloudOnBoot(reloadCallback) {
 }
 
 /**
- * Trigger an asynchronous cloud backup
+ * Trigger an asynchronous cloud backup (debounced 5 seconds)
  */
 function triggerCloudBackup() {
   const token = getToken();
@@ -140,11 +182,11 @@ function triggerCloudBackup() {
   if (syncTimeout) clearTimeout(syncTimeout);
   syncTimeout = setTimeout(async () => {
     await performCloudBackup();
-  }, 10000); // Debounce 10 seconds
+  }, 5000); // 5 seconds debounce
 }
 
 /**
- * Perform backup to GitHub Gist immediately
+ * Flush WAL and upload database to GitHub Gist immediately
  */
 async function performCloudBackup() {
   const token = getToken();
@@ -157,6 +199,14 @@ async function performCloudBackup() {
     if (!fs.existsSync(dbPath)) {
       isSyncing = false;
       return false;
+    }
+
+    // CRITICAL: Flush WAL into database.sqlite before reading!
+    try {
+      const { db } = require('./db');
+      db.pragma('wal_checkpoint(TRUNCATE)');
+    } catch (e) {
+      console.warn('[CloudSync] WAL checkpoint warning:', e.message);
     }
 
     const dataBuffer = fs.readFileSync(dbPath);
@@ -187,7 +237,6 @@ async function performCloudBackup() {
     }
 
     if (!response || !response.ok) {
-      // Create new Gist if PATCH failed or no gistId yet
       response = await fetch('https://api.github.com/gists', {
         method: 'POST',
         headers: {
