@@ -10,7 +10,8 @@ export function AuthProvider({ children }) {
 
   // Load user profile on mount or token change
   useEffect(() => {
-    async function loadUser() {
+    let retryTimeout;
+    async function loadUser(retryCount = 0) {
       if (!token) {
         setUser(null);
         setStats(null);
@@ -29,18 +30,38 @@ export function AuthProvider({ children }) {
           const data = await res.json();
           setUser(data.user);
           setStats(data.stats);
-        } else {
-          // Token invalid or expired
+          setLoading(false);
+        } else if (res.status === 401 || res.status === 403) {
+          // Token is genuinely invalid, expired, or account suspended
           logout();
+          setLoading(false);
+        } else {
+          // Server cold start (502/503/504) or waking up:
+          // NEVER logout! Keep token and retry up to 3 times after 3 seconds
+          if (retryCount < 3) {
+            retryTimeout = setTimeout(() => {
+              loadUser(retryCount + 1);
+            }, 3000);
+          } else {
+            setLoading(false);
+          }
         }
       } catch (err) {
-        console.error('Failed to authenticate:', err);
-      } finally {
-        setLoading(false);
+        console.warn('Network glitch or server waking up, retaining login session:', err);
+        if (retryCount < 3) {
+          retryTimeout = setTimeout(() => {
+            loadUser(retryCount + 1);
+          }, 3000);
+        } else {
+          setLoading(false);
+        }
       }
     }
 
     loadUser();
+    return () => {
+      if (retryTimeout) clearTimeout(retryTimeout);
+    };
   }, [token]);
 
   const login = async (email, password) => {
