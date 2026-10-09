@@ -5,9 +5,9 @@ export default function Footer({ setCurrentRoute, onSelectSemester }) {
   return (
     <footer className="bg-slate-900 text-slate-300 border-t border-slate-800 mt-20">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-8">
           {/* Col 1: Identity */}
-          <div className="md:col-span-2 space-y-4">
+          <div className="lg:col-span-2 space-y-4">
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-lg bg-blue-700 text-amber-400 flex items-center justify-center shadow-inner">
                 <GraduationCap className="w-6 h-6" />
@@ -94,6 +94,39 @@ export default function Footer({ setCurrentRoute, onSelectSemester }) {
                 </button>
               </li>
             </ul>
+          </div>
+
+          {/* Col 4: Scan Portal QR Code for Mobile */}
+          <div className="bg-slate-950/80 p-4 rounded-2xl border border-slate-800 flex flex-col items-center text-center shadow-lg">
+            <h4 className="text-xs font-bold text-amber-400 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+              <span>📱 Scan on Mobile</span>
+            </h4>
+            <div className="bg-white p-2 rounded-xl shadow-md">
+              <img
+                src="/gecwc-qr.png"
+                alt="GECWC Academics Mobile QR Code"
+                className="w-28 h-28 object-contain"
+              />
+            </div>
+            <p className="text-[11px] text-slate-300 font-medium mt-2">
+              Scan with phone camera or Google Lens
+            </p>
+            <div className="flex items-center gap-2 mt-2">
+              <a
+                href="/gecwc-qr.png"
+                download="GECWC_Academics_QR.png"
+                className="text-[10px] font-bold text-blue-400 hover:text-blue-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-md border border-slate-700 transition"
+              >
+                ⬇ PNG
+              </a>
+              <a
+                href="/gecwc-qr.svg"
+                download="GECWC_Academics_QR.svg"
+                className="text-[10px] font-bold text-amber-400 hover:text-amber-300 bg-slate-800 hover:bg-slate-700 px-2 py-1 rounded-md border border-slate-700 transition"
+              >
+                ⬇ SVG (Print)
+              </a>
+            </div>
           </div>
         </div>
 
