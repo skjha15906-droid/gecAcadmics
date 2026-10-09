@@ -8,7 +8,9 @@ import {
   User,
   ExternalLink,
   BookOpen,
-  FileCheck
+  FileCheck,
+  Star,
+  MessageSquare
 } from 'lucide-react';
 
 export function formatBytes(bytes, decimals = 1) {
@@ -105,28 +107,42 @@ export default function NoteCard({
         </div>
 
         <div className="flex items-center gap-1.5">
+          {/* Direct Online View Button */}
           <button
             onClick={() => onPreview && onPreview(note)}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 hover:text-blue-700 hover:bg-white rounded border border-slate-200 transition"
-            title="Preview Study Note"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:text-blue-700 hover:border-blue-300 rounded-md border border-slate-200 transition shadow-2xs"
+            title="Read / View Note Online"
           >
-            <BookOpen className="w-3.5 h-3.5" />
-            <span className="hidden sm:inline">Preview</span>
+            <Eye className="w-3.5 h-3.5 text-blue-600" />
+            <span>Direct View</span>
           </button>
 
+          {/* Quick Open in New Tab */}
+          <a
+            href={`/api/notes/${note.id}/view`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-1.5 text-slate-400 hover:text-blue-700 hover:bg-white rounded-md border border-transparent hover:border-slate-200 transition"
+            title="Open in Full Browser Tab"
+          >
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+
+          {/* Download File Button */}
           <button
             onClick={() => onDownload && onDownload(note)}
-            className="flex items-center gap-1 px-2.5 py-1 text-xs font-semibold text-white bg-blue-700 hover:bg-blue-800 rounded transition shadow-2xs"
-            title="Download Document"
+            className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-md transition shadow-2xs"
+            title="Download Document to Device"
           >
             <Download className="w-3.5 h-3.5" />
             <span>Download</span>
           </button>
 
+          {/* Report / Feedback Button */}
           <button
-            onClick={() => onReport && onReport(note)}
-            className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-            title="Report this note"
+            onClick={() => onReport ? onReport(note) : (onPreview && onPreview(note))}
+            className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition"
+            title="Review note or report an issue"
           >
             <Flag className="w-3.5 h-3.5" />
           </button>

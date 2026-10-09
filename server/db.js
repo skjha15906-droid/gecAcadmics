@@ -152,6 +152,19 @@ function initDatabase() {
       replied_by TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS note_reviews (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      note_id INTEGER NOT NULL REFERENCES notes(id) ON DELETE CASCADE,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_name TEXT NOT NULL,
+      rating INTEGER DEFAULT 5, -- 1 to 5
+      review_type TEXT NOT NULL DEFAULT 'feedback', -- 'feedback', 'problem'
+      issue_category TEXT,
+      comment TEXT NOT NULL,
+      status TEXT DEFAULT 'visible',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   seedInitialData();

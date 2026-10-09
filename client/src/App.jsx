@@ -39,6 +39,7 @@ function AppContent() {
 
   // Global modals
   const [previewNote, setPreviewNote] = useState(null);
+  const [previewInitialTab, setPreviewInitialTab] = useState('viewer');
   const [reportingNote, setReportingNote] = useState(null);
 
   // Handle URL hash changes or back/forward
@@ -76,7 +77,8 @@ function AppContent() {
     }
   };
 
-  const handlePreview = async (note) => {
+  const handlePreview = async (note, initialTab = 'viewer') => {
+    setPreviewInitialTab(initialTab);
     try {
       const res = await fetch(`/api/notes/${note.id}`);
       if (res.ok) {
@@ -92,7 +94,7 @@ function AppContent() {
   };
 
   const handleReport = (note) => {
-    setReportingNote(note);
+    handlePreview(note, 'reviews');
   };
 
   const renderAdminView = () => {
@@ -255,6 +257,7 @@ function AppContent() {
       {previewNote && (
         <NotePreviewModal
           note={previewNote}
+          initialTab={previewInitialTab}
           onClose={() => setPreviewNote(null)}
           onDownload={handleDownload}
           onReport={handleReport}
