@@ -3,8 +3,8 @@ const router = express.Router();
 const fs = require('fs');
 const path = require('path');
 const multer = require('multer');
-const { db, dbPath, reloadDatabase } = require('../db');
-const { getSyncStatus, triggerCloudBackup, performCloudBackup } = require('../cloudSync');
+const { db, dbPath, reloadDatabase, closeDatabase } = require('../db');
+const { getSyncStatus, triggerCloudBackup, performCloudBackup, restoreFromCloudOnBoot } = require('../cloudSync');
 const { requireAuth, requireRole, logActivity } = require('../middleware/auth');
 const { sendAdminReplyToStudent } = require('../utils/emailService');
 
@@ -807,6 +807,9 @@ router.post('/database/restore', uploadDb.single('database_file'), (req, res) =>
       fs.copyFileSync(dbPath, backupOldPath);
     } catch (_) {}
 
+    // Close open database handles before file replacement
+    closeDatabase();
+
     // Copy new file over dbPath
     fs.copyFileSync(tempPath, dbPath);
     if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
@@ -866,6 +869,22 @@ router.post('/database/sync', async (req, res) => {
       res.json({ success: true, message: 'Cloud backup synced successfully to GitHub Gist!', syncInfo });
     } else {
       res.status(400).json({ error: syncInfo.lastError || syncInfo.status, syncInfo });
+    }
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/database/restore-cloud - Manually pull and restore latest database from GitHub Gist
+router.post('/database/restore-cloud', async (req, res) => {
+  try {
+    const success = await restoreFromCloudOnBoot(reloadDatabase);
+    const syncInfo = getSyncStatus();
+    if (success) {
+      logActivity(req.user.id, req.user.name, req.user.role, 'CLOUD_RESTORE_DATABASE', 'system', 'database', 'Manually restored database from cloud backup');
+      res.json({ success: true, message: 'Database successfully restored from GitHub Gist cloud backup!', syncInfo });
+    } else {
+      res.status(400).json({ error: syncInfo.lastError || 'Failed to restore database from cloud backup.', syncInfo });
     }
   } catch (err) {
     res.status(500).json({ error: err.message });

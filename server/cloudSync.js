@@ -48,15 +48,19 @@ async function restoreFromCloudOnBoot(reloadCallback) {
     // 1. Locate or retrieve Gist
     let targetGist = null;
     if (gistId) {
-      const res = await fetch(`https://api.github.com/gists/${gistId}`, {
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'User-Agent': 'GECWC-Academics-Sync',
-          Accept: 'application/vnd.github.v3+json'
+      try {
+        const res = await fetch(`https://api.github.com/gists/${gistId}`, {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'GECWC-Academics-Sync',
+            Accept: 'application/vnd.github.v3+json'
+          }
+        });
+        if (res.ok) {
+          targetGist = await res.json();
         }
-      });
-      if (res.ok) {
-        targetGist = await res.json();
+      } catch (e) {
+        console.warn('[CloudSync] Failed to fetch gist by ID:', e.message);
       }
     }
 
@@ -70,9 +74,26 @@ async function restoreFromCloudOnBoot(reloadCallback) {
       });
       if (listRes.ok) {
         const gists = await listRes.json();
-        targetGist = gists.find(g => g.description === GIST_DESC);
-        if (targetGist) {
-          gistId = targetGist.id;
+        const found = gists.find(g => g.description === GIST_DESC);
+        if (found) {
+          gistId = found.id;
+          // IMPORTANT: GET /gists list endpoint truncates all file bodies! Fetch the single gist directly:
+          try {
+            const singleRes = await fetch(`https://api.github.com/gists/${gistId}`, {
+              headers: {
+                Authorization: `Bearer ${token}`,
+                'User-Agent': 'GECWC-Academics-Sync',
+                Accept: 'application/vnd.github.v3+json'
+              }
+            });
+            if (singleRes.ok) {
+              targetGist = await singleRes.json();
+            } else {
+              targetGist = found;
+            }
+          } catch (_) {
+            targetGist = found;
+          }
         }
       }
     }
@@ -86,11 +107,18 @@ async function restoreFromCloudOnBoot(reloadCallback) {
 
     const fileMeta = targetGist.files[GIST_FILENAME];
     let b64Content = fileMeta.content;
-    if (fileMeta.truncated && fileMeta.raw_url) {
-      const rawRes = await fetch(fileMeta.raw_url, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      b64Content = await rawRes.text();
+
+    // CRITICAL: GitHub Usercontent (raw_url) MUST NOT have the Authorization header!
+    // Sending Authorization: Bearer to raw_url causes an immediate HTTP 404 from GitHub CDN!
+    if ((fileMeta.truncated || !b64Content) && fileMeta.raw_url) {
+      console.log('[CloudSync] Backup file truncated in API response. Fetching full content from raw_url (without auth header)...');
+      const rawRes = await fetch(fileMeta.raw_url);
+      if (rawRes.ok) {
+        b64Content = await rawRes.text();
+      } else {
+        console.error(`[CloudSync] Failed to download from raw_url (${rawRes.status} ${rawRes.statusText})`);
+        return false;
+      }
     }
 
     if (!b64Content) {
@@ -98,10 +126,10 @@ async function restoreFromCloudOnBoot(reloadCallback) {
       return false;
     }
 
-    const buffer = Buffer.from(b64Content, 'base64');
+    const buffer = Buffer.from(b64Content.trim(), 'base64');
     // Verify SQLite header magic bytes ("SQLite format 3\0")
     if (buffer.length < 16 || buffer.toString('utf8', 0, 15) !== 'SQLite format 3') {
-      console.error('[CloudSync] Downloaded data is not a valid SQLite database.');
+      console.error('[CloudSync] Downloaded data is not a valid SQLite database (header mismatch).');
       return false;
     }
 
@@ -147,6 +175,15 @@ async function restoreFromCloudOnBoot(reloadCallback) {
 
     // SAFEGUARD 2: If cloud has more or equal data, safely restore from cloud
     console.log(`[CloudSync] Restoring cloud database (${cloudUserCount} users, ${cloudNoteCount} notes)...`);
+    
+    // Safely close local database connection before replacing file
+    try {
+      const { closeDatabase } = require('./db');
+      closeDatabase();
+    } catch (e) {
+      console.warn('[CloudSync] Error closing DB before file copy:', e.message);
+    }
+
     fs.copyFileSync(tempCheckPath, dbPath);
     try { if (fs.existsSync(tempCheckPath)) fs.unlinkSync(tempCheckPath); } catch (_) {}
 
@@ -155,6 +192,14 @@ async function restoreFromCloudOnBoot(reloadCallback) {
       if (fs.existsSync(dbPath + '-wal')) fs.unlinkSync(dbPath + '-wal');
       if (fs.existsSync(dbPath + '-shm')) fs.unlinkSync(dbPath + '-shm');
     } catch (_) {}
+
+    // Reload active database connection
+    try {
+      const { reloadDatabase } = require('./db');
+      reloadDatabase();
+    } catch (e) {
+      console.warn('[CloudSync] Error reloading DB:', e.message);
+    }
 
     lastSyncTime = new Date().toISOString();
     lastSyncStatus = `Synced (${cloudUserCount} users, ${cloudNoteCount} notes)`;
@@ -221,6 +266,26 @@ async function performCloudBackup() {
         }
       }
     };
+
+    // If gistId not known in memory, check if existing Gist already exists
+    if (!gistId) {
+      try {
+        const listRes = await fetch('https://api.github.com/gists', {
+          headers: {
+            Authorization: `Bearer ${token}`,
+            'User-Agent': 'GECWC-Academics-Sync',
+            Accept: 'application/vnd.github.v3+json'
+          }
+        });
+        if (listRes.ok) {
+          const gists = await listRes.json();
+          const existing = gists.find(g => g.description === GIST_DESC);
+          if (existing) {
+            gistId = existing.id;
+          }
+        }
+      } catch (_) {}
+    }
 
     let response;
     if (gistId) {

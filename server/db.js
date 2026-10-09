@@ -16,10 +16,14 @@ const db = new Proxy({}, {
   }
 });
 
-function reloadDatabase() {
+function closeDatabase() {
   try {
     currentDb.close();
   } catch (_) {}
+}
+
+function reloadDatabase() {
+  closeDatabase();
   currentDb = new Database(dbPath);
   currentDb.pragma('journal_mode = WAL');
   currentDb.pragma('foreign_keys = ON');
@@ -746,5 +750,6 @@ module.exports = {
   db,
   dbPath,
   initDatabase,
-  reloadDatabase
+  reloadDatabase,
+  closeDatabase
 };
