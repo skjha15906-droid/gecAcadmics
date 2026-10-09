@@ -141,40 +141,40 @@ export default function NotePreviewModal({
   });
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-fade-in">
-      <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[95vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-y-auto bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-0 sm:p-4 animate-fade-in">
+      <div className="bg-white rounded-none sm:rounded-2xl border-0 sm:border border-slate-200 shadow-2xl max-w-4xl w-full h-full sm:h-auto sm:max-h-[95vh] flex flex-col overflow-hidden">
         {/* Top Header Bar */}
-        <div className="bg-slate-900 text-white px-5 py-3.5 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 text-amber-400 flex items-center justify-center shrink-0">
-              <GraduationCap className="w-5 h-5" />
+        <div className="bg-slate-900 text-white px-3 sm:px-5 py-2.5 sm:py-3.5 flex items-center justify-between border-b border-slate-800 shrink-0">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-blue-600 text-amber-400 flex items-center justify-center shrink-0">
+              <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
             <div className="min-w-0">
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[11px] font-mono font-bold bg-amber-400/20 text-amber-300 px-2 py-0.5 rounded">
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                <span className="text-[10px] sm:text-[11px] font-mono font-bold bg-amber-400/20 text-amber-300 px-1.5 sm:px-2 py-0.5 rounded">
                   Sem {note.sem_number || note.semester_id}
                 </span>
-                <span className="text-xs text-slate-300 font-semibold truncate max-w-[280px]">
+                <span className="text-[11px] sm:text-xs text-slate-300 font-semibold truncate max-w-[200px] sm:max-w-[280px]">
                   {note.subject_code ? `${note.subject_code} • ` : ''}{note.subject_name}
                 </span>
               </div>
-              <h2 className="text-sm sm:text-base font-bold text-white line-clamp-1 mt-0.5">
+              <h2 className="text-xs sm:text-base font-bold text-white line-clamp-1 mt-0.5">
                 {note.title}
               </h2>
             </div>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {/* Quick Open in Browser Tab */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Quick Open in Browser Tab / Mobile Full Screen */}
             <a
               href={`/api/notes/${note.id}/view`}
               target="_blank"
               rel="noopener noreferrer"
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white rounded-lg transition border border-slate-700"
+              className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white rounded-lg transition shadow-2xs"
               title="Open full document in separate browser tab"
             >
               <ExternalLink className="w-3.5 h-3.5" />
-              <span>Full Screen ↗</span>
+              <span className="hidden xs:inline sm:inline">Full Screen</span>
             </a>
 
             <button
@@ -187,31 +187,31 @@ export default function NotePreviewModal({
           </div>
         </div>
 
-        {/* Tab Navigation Navigation Strip */}
-        <div className="bg-slate-100 px-5 border-b border-slate-200 flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
+        {/* Tab Navigation Strip */}
+        <div className="bg-slate-100 px-3 sm:px-5 border-b border-slate-200 flex items-center justify-between text-xs overflow-x-auto shrink-0">
+          <div className="flex items-center gap-1 sm:gap-2 shrink-0">
             <button
               onClick={() => setActiveTab('viewer')}
-              className={`flex items-center gap-2 py-2.5 px-3 font-semibold border-b-2 transition ${
+              className={`flex items-center gap-1.5 py-2 sm:py-2.5 px-2.5 sm:px-3 font-semibold border-b-2 whitespace-nowrap transition ${
                 activeTab === 'viewer'
                   ? 'border-blue-700 text-blue-700 bg-white/70'
                   : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <Eye className="w-4 h-4 text-blue-600" />
-              <span>Direct Document View</span>
+              <span>Notes Viewer</span>
             </button>
 
             <button
               onClick={() => setActiveTab('reviews')}
-              className={`flex items-center gap-2 py-2.5 px-3 font-semibold border-b-2 transition ${
+              className={`flex items-center gap-1.5 py-2 sm:py-2.5 px-2.5 sm:px-3 font-semibold border-b-2 whitespace-nowrap transition ${
                 activeTab === 'reviews'
                   ? 'border-blue-700 text-blue-700 bg-white/70'
                   : 'border-transparent text-slate-600 hover:text-slate-900'
               }`}
             >
               <MessageSquare className="w-4 h-4 text-amber-600" />
-              <span>Reviews & Problem Reports</span>
+              <span>Reviews & Issues</span>
               {reviews.length > 0 && (
                 <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-1.5 py-0.2 rounded-full">
                   {reviews.length}
@@ -220,7 +220,7 @@ export default function NotePreviewModal({
             </button>
           </div>
 
-          <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500 font-mono">
+          <div className="hidden sm:flex items-center gap-2 text-[11px] text-slate-500 font-mono shrink-0">
             <span>{note.file_type || 'PDF'}</span>
             <span>•</span>
             <span>{formatBytes(note.file_size)}</span>
@@ -229,66 +229,64 @@ export default function NotePreviewModal({
 
         {/* TAB 1: DIRECT INTERACTIVE DOCUMENT VIEWER */}
         {activeTab === 'viewer' && (
-          <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-slate-50 flex flex-col space-y-3">
+          <div className="p-1 sm:p-4 overflow-y-auto flex-1 bg-slate-50 flex flex-col space-y-2 sm:space-y-3">
             {/* Direct Document Preview Frame */}
-            <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden flex-1 min-h-[55vh] flex flex-col">
-              <div className="bg-slate-100/90 px-4 py-2 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
-                <span className="flex items-center gap-1.5 font-medium">
-                  <FileText className="w-4 h-4 text-blue-600" />
-                  <span className="truncate max-w-[320px]">{note.file_name}</span>
+            <div className="bg-white rounded-lg sm:rounded-xl border border-slate-300 shadow-xs overflow-hidden flex-1 min-h-[60vh] sm:min-h-[58vh] flex flex-col">
+              <div className="bg-slate-100/90 px-3 sm:px-4 py-1.5 sm:py-2 border-b border-slate-200 flex items-center justify-between text-xs text-slate-600">
+                <span className="flex items-center gap-1.5 font-medium min-w-0">
+                  <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="truncate max-w-[160px] sm:max-w-[320px]">{note.file_name}</span>
                 </span>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 shrink-0">
                   <button
                     onClick={() => setActiveTab('reviews')}
-                    className="text-[11px] text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60"
+                    className="text-[10px] sm:text-[11px] text-amber-700 hover:text-amber-800 font-semibold flex items-center gap-1 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/60"
                   >
                     <AlertTriangle className="w-3 h-3 text-amber-600" />
-                    <span>Report Problem / Review</span>
+                    <span>Report Issue</span>
                   </button>
 
                   <a
                     href={`/api/notes/${note.id}/view`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="text-[11px] text-blue-700 hover:underline font-semibold flex items-center gap-1"
+                    className="text-[10px] sm:text-[11px] text-blue-700 hover:underline font-semibold flex items-center gap-1"
                   >
-                    <span>Open in New Tab</span>
-                    <ExternalLink className="w-3 h-3" />
+                    <span>New Tab ↗</span>
                   </a>
                 </div>
               </div>
 
-              {/* Live Iframe Document Render */}
-              <div className="relative flex-1 w-full bg-slate-900/5 min-h-[50vh] sm:min-h-[58vh]">
+              {/* Live Iframe Document Render (Full mobile width with touch scrolling) */}
+              <div className="relative flex-1 w-full bg-slate-900/5 min-h-[55vh] sm:min-h-[58vh]">
                 <iframe
                   src={`/api/notes/${note.id}/view`}
                   title={note.title}
-                  className="w-full h-full min-h-[50vh] sm:min-h-[58vh] border-0 bg-white"
+                  className="w-full h-full min-h-[55vh] sm:min-h-[58vh] border-0 bg-white"
                   allowFullScreen
                 />
               </div>
             </div>
 
             {/* Quick Details Bar */}
-            <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center gap-4">
+            <div className="bg-white p-2.5 sm:p-3 rounded-lg sm:rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-2 sm:gap-3 text-xs shrink-0">
+              <div className="flex items-center gap-3 sm:gap-4 flex-wrap">
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Uploaded By</span>
-                  <span className="font-semibold text-slate-800">{note.uploader_name}</span>
+                  <span className="text-slate-400 block text-[9px] sm:text-[10px] uppercase font-bold">Uploaded By</span>
+                  <span className="font-semibold text-slate-800 text-[11px] sm:text-xs">{note.uploader_name}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Unit</span>
-                  <span className="font-semibold text-slate-800">{note.unit_title || 'Unit ' + (note.unit_number || '1')}</span>
+                  <span className="text-slate-400 block text-[9px] sm:text-[10px] uppercase font-bold">Unit</span>
+                  <span className="font-semibold text-slate-800 text-[11px] sm:text-xs">{note.unit_title || 'Unit ' + (note.unit_number || '1')}</span>
                 </div>
                 <div>
-                  <span className="text-slate-400 block text-[10px] uppercase font-bold">Downloads</span>
-                  <span className="font-semibold text-slate-800">{note.downloads_count || 0} times</span>
+                  <span className="text-slate-400 block text-[9px] sm:text-[10px] uppercase font-bold">Downloads</span>
+                  <span className="font-semibold text-slate-800 text-[11px] sm:text-xs">{note.downloads_count || 0} times</span>
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-slate-500 text-[11px]">Direct online viewing active</span>
+              <div className="flex items-center gap-2 ml-auto">
                 <button
                   onClick={() => onDownload && onDownload(note)}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-lg shadow-2xs transition"

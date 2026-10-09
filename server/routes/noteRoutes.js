@@ -251,6 +251,419 @@ router.get('/:id/view', (req, res) => {
   } catch (_) {}
 
   const filePath = path.join(uploadsDir, note.file_name);
+  const cleanTitle = note.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const cleanSubject = `${note.subject_code ? note.subject_code + ' - ' : ''}${note.subject_name}`;
+  const cleanUnit = note.unit_title || '';
+  const cleanUploader = note.uploader_name || 'Academic Faculty';
+
+  // 1. If physical file exists and is a PDF, serve mobile-optimized PDF.js responsive viewer
+  if (fs.existsSync(filePath)) {
+    const ext = path.extname(note.file_name).toLowerCase();
+
+    if (ext === '.pdf') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline');
+
+      const pdfViewerHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>${cleanTitle} | GECWC Academics</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; min-height: 100%; background: #0f172a; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: #f8fafc; overflow-x: hidden; }
+    
+    .toolbar {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: #1e293b;
+      border-bottom: 1px solid #334155;
+      padding: 8px 12px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 12px;
+      box-shadow: 0 4px 6px -1px rgba(0,0,0,0.3);
+    }
+    .tool-group { display: flex; align-items: center; gap: 6px; }
+    .btn {
+      background: #334155;
+      color: #f8fafc;
+      border: 1px solid #475569;
+      padding: 5px 9px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      text-decoration: none;
+      transition: all 0.15s ease;
+      touch-action: manipulation;
+    }
+    .btn:hover, .btn:active { background: #475569; color: #fff; }
+    .btn-primary { background: #2563eb; border-color: #3b82f6; }
+    .btn-primary:hover, .btn-primary:active { background: #1d4ed8; }
+    .page-info { font-size: 11px; font-weight: 700; color: #38bdf8; font-family: monospace; }
+
+    #viewer-container {
+      width: 100%;
+      max-width: 100%;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6px 0 24px 0;
+      gap: 12px;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      min-height: calc(100vh - 50px);
+    }
+
+    .pdf-page-wrapper {
+      position: relative;
+      background: #ffffff;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      border-radius: 4px;
+      overflow: hidden;
+      margin: 0 auto;
+    }
+
+    .pdf-canvas {
+      display: block;
+      margin: 0 auto;
+    }
+
+    .loading-box {
+      text-align: center;
+      padding: 40px 16px;
+      color: #94a3b8;
+      font-size: 13px;
+    }
+    .spinner {
+      width: 32px;
+      height: 32px;
+      border: 3px solid #334155;
+      border-top-color: #38bdf8;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin: 0 auto 12px auto;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .fallback-box {
+      display: none;
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 8px;
+      padding: 24px;
+      text-align: center;
+      margin: 20px 12px;
+      max-width: 480px;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+</head>
+<body>
+  <div class="toolbar">
+    <div class="tool-group">
+      <span class="page-info" id="page-count-display">Loading PDF...</span>
+    </div>
+
+    <div class="tool-group">
+      <button class="btn" id="btn-zoom-out" title="Zoom Out">➖</button>
+      <button class="btn" id="btn-fit-width" title="Fit to Phone Width">Fit Width</button>
+      <button class="btn" id="btn-zoom-in" title="Zoom In">➕</button>
+      <a href="/api/notes/${note.id}/download" class="btn btn-primary" title="Download">⬇ Download</a>
+    </div>
+  </div>
+
+  <div id="viewer-container">
+    <div id="loading-indicator" class="loading-box">
+      <div class="spinner"></div>
+      <p>Adapting document for mobile screen...</p>
+    </div>
+
+    <div id="fallback-ui" class="fallback-box">
+      <h3 style="font-size:14px; margin-bottom:8px; color:#fff;">Document Viewer</h3>
+      <p style="font-size:12px; color:#94a3b8; margin-bottom:14px;">Open in full screen or download to view on your mobile:</p>
+      <a href="/api/notes/${note.id}/raw" target="_blank" class="btn btn-primary" style="margin-bottom:8px; display:inline-block;">📱 Open in Full Screen</a>
+      <br/>
+      <a href="/api/notes/${note.id}/download" class="btn" style="display:inline-block;">⬇ Download PDF File</a>
+    </div>
+  </div>
+
+  <script>
+    const pdfUrl = '/api/notes/${note.id}/raw';
+    let pdfDoc = null;
+    let currentZoomMultiplier = 1.0;
+    let totalPages = 0;
+    const container = document.getElementById('viewer-container');
+    const loadingIndicator = document.getElementById('loading-indicator');
+    const pageCountDisplay = document.getElementById('page-count-display');
+    const fallbackUi = document.getElementById('fallback-ui');
+
+    const fallbackTimer = setTimeout(() => {
+      if (!pdfDoc && fallbackUi) {
+        loadingIndicator.style.display = 'none';
+        fallbackUi.style.display = 'block';
+      }
+    }, 7000);
+
+    if (window.pdfjsLib) {
+      pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+      pdfjsLib.getDocument(pdfUrl).promise.then(function(doc) {
+        clearTimeout(fallbackTimer);
+        pdfDoc = doc;
+        totalPages = doc.numPages;
+        pageCountDisplay.textContent = totalPages + ' Pages (Fit)';
+        loadingIndicator.style.display = 'none';
+        renderAllPages();
+      }).catch(function(err) {
+        console.error('PDF.js error:', err);
+        clearTimeout(fallbackTimer);
+        loadingIndicator.style.display = 'none';
+        fallbackUi.style.display = 'block';
+      });
+    } else {
+      loadingIndicator.style.display = 'none';
+      fallbackUi.style.display = 'block';
+    }
+
+    let isRendering = false;
+    let renderQueued = false;
+
+    async function renderAllPages() {
+      if (!pdfDoc) return;
+      if (isRendering) {
+        renderQueued = true;
+        return;
+      }
+      isRendering = true;
+      container.innerHTML = '';
+
+      // Determine available width (fits phone screen perfectly with no horizontal scrolling)
+      const containerWidth = container.clientWidth || window.innerWidth;
+      const availableWidth = Math.max(280, Math.min(window.innerWidth, containerWidth) - 8);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+
+      try {
+        for (let num = 1; num <= totalPages; num++) {
+          const page = await pdfDoc.getPage(num);
+          const unscaledViewport = page.getViewport({ scale: 1 });
+          
+          // Fit exactly to available width
+          const fitScale = (availableWidth / unscaledViewport.width) * currentZoomMultiplier;
+          const renderViewport = page.getViewport({ scale: fitScale * dpr });
+          const cssWidth = Math.round(unscaledViewport.width * fitScale);
+          const cssHeight = Math.round(unscaledViewport.height * fitScale);
+
+          const wrapper = document.createElement('div');
+          wrapper.className = 'pdf-page-wrapper';
+          wrapper.id = 'page-' + num;
+          wrapper.style.width = cssWidth + 'px';
+          if (currentZoomMultiplier <= 1.0) {
+            wrapper.style.maxWidth = '100%';
+          } else {
+            wrapper.style.maxWidth = 'none';
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.className = 'pdf-canvas';
+          const ctx = canvas.getContext('2d');
+
+          canvas.width = Math.round(renderViewport.width);
+          canvas.height = Math.round(renderViewport.height);
+          canvas.style.width = cssWidth + 'px';
+          canvas.style.height = cssHeight + 'px';
+          if (currentZoomMultiplier <= 1.0) {
+            canvas.style.maxWidth = '100%';
+            canvas.style.height = 'auto';
+          } else {
+            canvas.style.maxWidth = 'none';
+          }
+
+          wrapper.appendChild(canvas);
+          container.appendChild(wrapper);
+
+          await page.render({ canvasContext: ctx, viewport: renderViewport }).promise;
+        }
+      } catch (err) {
+        console.error('Render error:', err);
+      } finally {
+        isRendering = false;
+        if (renderQueued) {
+          renderQueued = false;
+          renderAllPages();
+        }
+      }
+    }
+
+    document.getElementById('btn-zoom-in').addEventListener('click', () => {
+      currentZoomMultiplier = Math.min(currentZoomMultiplier + 0.25, 2.5);
+      pageCountDisplay.textContent = totalPages + ' Pages (' + Math.round(currentZoomMultiplier * 100) + '%)';
+      renderAllPages();
+    });
+
+    document.getElementById('btn-zoom-out').addEventListener('click', () => {
+      currentZoomMultiplier = Math.max(currentZoomMultiplier - 0.25, 0.6);
+      pageCountDisplay.textContent = totalPages + ' Pages (' + Math.round(currentZoomMultiplier * 100) + '%)';
+      renderAllPages();
+    });
+
+    document.getElementById('btn-fit-width').addEventListener('click', () => {
+      currentZoomMultiplier = 1.0;
+      pageCountDisplay.textContent = totalPages + ' Pages (Fit)';
+      renderAllPages();
+    });
+
+    let resizeTimer;
+    window.addEventListener('resize', () => {
+      clearTimeout(resizeTimer);
+      resizeTimer = setTimeout(() => {
+        renderAllPages();
+      }, 250);
+    });
+    window.addEventListener('orientationchange', () => {
+      setTimeout(renderAllPages, 300);
+    });
+  </script>
+</body>
+</html>`;
+      return res.send(pdfViewerHtml);
+    }
+
+    // 2. If physical file exists and is an image, serve responsive image viewer
+    if (['.jpg', '.jpeg', '.png'].includes(ext)) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Content-Disposition', 'inline');
+      return res.send(`<!DOCTYPE html>
+<html>
+<head>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>${cleanTitle}</title>
+  <style>
+    body { margin: 0; background: #0f172a; display: flex; flex-direction: column; align-items: center; justify-content: center; min-height: 100vh; padding: 8px; box-sizing: border-box; }
+    img { max-width: 100%; height: auto; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+  </style>
+</head>
+<body>
+  <img src="/api/notes/${note.id}/raw" alt="${cleanTitle}" />
+</body>
+</html>`);
+    }
+
+    // For other files (e.g. txt, doc), send directly
+    const mimeTypes = {
+      '.txt': 'text/plain',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    };
+    res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(note.file_name)}"`);
+    return res.sendFile(filePath);
+  }
+
+  // 3. If physical file does not exist on disk, serve a 100% mobile-responsive academic document reader
+  res.setHeader('Content-Type', 'text/html; charset=utf-8');
+  res.setHeader('Content-Disposition', 'inline');
+  const cleanDesc = (note.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
+  <title>${cleanTitle} | GECWC Academics</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #1e293b; padding: 8px; display: flex; justify-content: center; width: 100%; overflow-x: hidden; }
+    .doc-page { background: #ffffff; width: 100%; max-width: 820px; min-height: 90vh; padding: 20px 14px; border-radius: 12px; box-shadow: 0 10px 25px -5px rgba(0,0,0,0.4); box-sizing: border-box; overflow-x: hidden; word-break: break-word; }
+    @media (min-width: 640px) {
+      body { padding: 24px; }
+      .doc-page { padding: 40px 48px; }
+    }
+    .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 14px; text-align: center; }
+    .inst-name { font-size: 12px; font-weight: 800; letter-spacing: 0.5px; color: #1e3a8a; text-transform: uppercase; margin-bottom: 4px; }
+    @media (min-width: 640px) { .inst-name { font-size: 13px; } }
+    .dept-name { font-size: 11px; color: #64748b; margin-bottom: 8px; font-weight: 600; line-height: 1.4; }
+    .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 700; padding: 2px 8px; border-radius: 9999px; }
+    .doc-title { font-size: 18px; font-weight: 800; color: #0f172a; margin: 16px 0 10px 0; line-height: 1.35; }
+    @media (min-width: 640px) { .doc-title { font-size: 22px; } }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px; margin: 14px 0; font-size: 11px; }
+    @media (min-width: 640px) { .meta-grid { grid-template-columns: repeat(4, 1fr); padding: 14px; font-size: 12px; } }
+    .meta-item strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
+    .meta-item span { color: #0f172a; font-weight: 600; }
+    .section-title { font-size: 13px; font-weight: 700; color: #1e3a8a; border-left: 4px solid #2563eb; padding-left: 8px; margin: 20px 0 8px 0; text-transform: uppercase; letter-spacing: 0.5px; }
+    .content-box { font-size: 13px; line-height: 1.6; color: #334155; }
+    .syllabus-box { background: #f1f5f9; border-left: 4px solid #0284c7; padding: 10px 12px; border-radius: 4px; margin: 12px 0; font-size: 12.5px; }
+    .stamp { margin-top: 28px; padding: 10px; background: #f0fdf4; border: 1px dashed #22c55e; border-radius: 8px; font-size: 11px; color: #15803d; text-align: center; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <div class="doc-page">
+    <div class="header">
+      <h2 class="inst-name">Government Engineering College, West Champaran</h2>
+      <p class="dept-name">Dept of Computer Science & Engineering • Bihar Engineering University (BEU)</p>
+      <span class="badge">Semester ${note.sem_number || note.semester_id} • Verified Resource</span>
+    </div>
+
+    <h1 class="doc-title">${cleanTitle}</h1>
+
+    <div class="meta-grid">
+      <div class="meta-item">
+        <strong>Subject:</strong>
+        <span>${cleanSubject}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Unit:</strong>
+        <span>${cleanUnit}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Uploaded By:</strong>
+        <span>${cleanUploader}</span>
+      </div>
+      <div class="meta-item">
+        <strong>Type:</strong>
+        <span>${note.resource_type || 'Lecture Notes'}</span>
+      </div>
+    </div>
+
+    <div class="section-title">Academic Scope & Core Topics</div>
+    <div class="content-box">
+      <div class="syllabus-box">
+        <strong>Course Syllabus Alignment:</strong><br/>
+        ${cleanDesc}
+      </div>
+      <p>This digital resource contains verified theoretical derivations, architectural principles, algorithms, and previous year university exam patterns for <strong>${cleanSubject}</strong> (Unit: ${cleanUnit}).</p>
+      <p style="margin-top: 8px;">Students are encouraged to utilize this material for in-depth conceptual revision, semester exams, and technical competitive preparation.</p>
+    </div>
+
+    <div class="stamp">
+      ✔ Officially Verified & Approved by GECWC Academic Moderation Committee
+    </div>
+  </div>
+</body>
+</html>`;
+  return res.send(html);
+});
+
+// GET /api/notes/:id/raw - Serve raw file bytes for viewers and streaming
+router.get('/:id/raw', (req, res) => {
+  const noteId = req.params.id;
+  const note = db.prepare('SELECT * FROM notes WHERE id = ?').get(noteId);
+  if (!note) {
+    return res.status(404).send('Note not found.');
+  }
+
+  const filePath = path.join(uploadsDir, note.file_name);
   if (fs.existsSync(filePath)) {
     const ext = path.extname(note.file_name).toLowerCase();
     const mimeTypes = {
@@ -264,91 +677,13 @@ router.get('/:id/view', (req, res) => {
       '.ppt': 'application/vnd.ms-powerpoint',
       '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
     };
-
-    const contentType = mimeTypes[ext] || 'application/octet-stream';
-    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(note.file_name)}"`);
     return res.sendFile(filePath);
   }
 
-  // If physical file does not exist on disk, serve a high-fidelity academic reader document
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  res.setHeader('Content-Disposition', 'inline');
-  const cleanTitle = note.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const cleanDesc = (note.description || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const cleanSubject = `${note.subject_code ? note.subject_code + ' - ' : ''}${note.subject_name}`;
-  const cleanUnit = note.unit_title || '';
-  const cleanUploader = note.uploader_name || 'Academic Faculty';
-
-  const html = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>${cleanTitle} | GECWC Academics</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #0f172a; color: #1e293b; margin: 0; padding: 24px; display: flex; justify-content: center; }
-    .doc-page { background: #ffffff; width: 100%; max-width: 820px; min-height: 90vh; padding: 40px 48px; border-radius: 12px; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.4); box-sizing: border-box; }
-    .header { border-bottom: 2px solid #e2e8f0; padding-bottom: 16px; text-align: center; }
-    .inst-name { font-size: 13px; font-weight: 800; letter-spacing: 1px; color: #1e3a8a; text-transform: uppercase; margin: 0 0 6px 0; }
-    .dept-name { font-size: 12px; color: #64748b; margin: 0 0 10px 0; font-weight: 600; }
-    .badge { display: inline-block; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 11px; font-weight: 700; padding: 3px 10px; border-radius: 9999px; }
-    .doc-title { font-size: 22px; font-weight: 800; color: #0f172a; margin: 20px 0 12px 0; line-height: 1.3; }
-    .meta-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; background: #f8fafc; border: 1px solid #e2e8f0; padding: 14px; border-radius: 8px; margin: 18px 0; font-size: 12px; }
-    .meta-item strong { display: block; color: #64748b; font-size: 10px; text-transform: uppercase; margin-bottom: 2px; }
-    .meta-item span { color: #0f172a; font-weight: 600; }
-    .section-title { font-size: 14px; font-weight: 700; color: #1e3a8a; border-left: 4px solid #2563eb; padding-left: 10px; margin: 24px 0 10px 0; text-transform: uppercase; letter-spacing: 0.5px; }
-    .content-box { font-size: 13.5px; line-height: 1.65; color: #334155; }
-    .syllabus-box { background: #f1f5f9; border-left: 4px solid #0284c7; padding: 12px 16px; border-radius: 4px; margin: 14px 0; font-size: 13px; }
-    .stamp { margin-top: 32px; padding: 12px; background: #f0fdf4; border: 1px dashed #22c55e; border-radius: 8px; font-size: 12px; color: #15803d; text-align: center; font-weight: 600; }
-  </style>
-</head>
-<body>
-  <div class="doc-page">
-    <div class="header">
-      <h2 class="inst-name">Government Engineering College, West Champaran</h2>
-      <p class="dept-name">Department of Computer Science & Engineering (CSE) • Bihar Engineering University (BEU)</p>
-      <span class="badge">Semester ${note.sem_number || note.semester_id} • Verified Academic Resource</span>
-    </div>
-
-    <h1 class="doc-title">${cleanTitle}</h1>
-
-    <div class="meta-grid">
-      <div class="meta-item">
-        <strong>Subject:</strong>
-        <span>${cleanSubject}</span>
-      </div>
-      <div class="meta-item">
-        <strong>Curriculum Unit:</strong>
-        <span>${cleanUnit}</span>
-      </div>
-      <div class="meta-item">
-        <strong>Uploaded By:</strong>
-        <span>${cleanUploader}</span>
-      </div>
-      <div class="meta-item">
-        <strong>Resource Type:</strong>
-        <span>${note.resource_type || 'Lecture Notes'}</span>
-      </div>
-    </div>
-
-    <div class="section-title">Academic Scope & Core Topics</div>
-    <div class="content-box">
-      <div class="syllabus-box">
-        <strong>Course Syllabus Alignment:</strong><br/>
-        ${cleanDesc}
-      </div>
-      <p>This digital document contains verified theoretical derivations, architectural principles, algorithms, and previous year university exam patterns for <strong>${cleanSubject}</strong> (Unit: ${cleanUnit}).</p>
-      <p>Students are encouraged to utilize this material for in-depth conceptual revision, semester exams, and technical competitive preparation.</p>
-    </div>
-
-    <div class="stamp">
-      ✔ Officially Verified & Approved by GECWC Academic Moderation Committee
-    </div>
-  </div>
-</body>
-</html>`;
-  return res.send(html);
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(`Title: ${note.title}\nUploaded by: ${note.uploader_name}`);
 });
 
 // GET /api/notes/:id/download - Stream/download file & increment download count
