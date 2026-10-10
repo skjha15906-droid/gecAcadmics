@@ -4,6 +4,7 @@ import {
   Users,
   FileText,
   Clock,
+  CheckCircle,
   CheckCircle2,
   XCircle,
   Flag,
