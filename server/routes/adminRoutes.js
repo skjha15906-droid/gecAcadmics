@@ -725,6 +725,8 @@ router.post('/contact-messages/:id/reply', (req, res) => {
     WHERE id = ?
   `).run(cleanReply, repliedBy, id);
 
+  triggerCloudBackup();
+
   logActivity(req.user.id, req.user.name, req.user.role, 'REPLY_INQUIRY', 'contact_messages', id, `Sent in-portal response to ${msg.name} (${msg.email})`);
 
   // Attempt to deliver reply to student's email inbox if SMTP is configured
@@ -741,7 +743,7 @@ router.post('/contact-messages/:id/reply', (req, res) => {
 
   res.json({
     success: true,
-    message: 'Reply sent and recorded successfully!',
+    message: 'Reply sent and recorded in portal successfully!',
     admin_reply: cleanReply,
     replied_by: repliedBy,
     status: 'replied'
@@ -757,6 +759,7 @@ router.delete('/contact-messages/:id', (req, res) => {
   }
 
   db.prepare('DELETE FROM contact_messages WHERE id = ?').run(id);
+  triggerCloudBackup();
   logActivity(req.user.id, req.user.name, req.user.role, 'DELETE_CONTACT_MESSAGE', 'contact_messages', id, `Deleted inquiry from ${msg.name} (${msg.email})`);
 
   res.json({ success: true, message: 'Message deleted successfully.' });

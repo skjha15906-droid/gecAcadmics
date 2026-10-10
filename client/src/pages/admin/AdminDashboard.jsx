@@ -57,7 +57,7 @@ export default function AdminDashboard({
   const [replyText, setReplyText] = useState('');
   const [replyLoading, setReplyLoading] = useState(false);
   const [replyError, setReplyError] = useState('');
-  const [openGmailOnSend, setOpenGmailOnSend] = useState(true);
+  const [openGmailOnSend, setOpenGmailOnSend] = useState(false);
 
   const handleSendReply = async (e, shouldOpenGmail = openGmailOnSend) => {
     if (e && e.preventDefault) e.preventDefault();
@@ -77,9 +77,9 @@ export default function AdminDashboard({
       const resData = await res.json();
       if (!res.ok) throw new Error(resData.error || 'Failed to send reply');
 
-      setActionMsg(`In-portal reply sent to ${replyingMsg.name} successfully!`);
+      setActionMsg(`In-portal reply delivered to ${replyingMsg.name} (Ticket #${replyingMsg.id})! Student can now view it on the portal.`);
 
-      // Open Gmail compose pre-filled with the exact reply so the student receives it in their personal inbox!
+      // Only open Gmail if explicitly requested
       if (shouldOpenGmail) {
         const gmailUrl = `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(replyingMsg.email)}&su=${encodeURIComponent('Re: ' + replyingMsg.subject + ' - GECWC Academics')}&body=${encodeURIComponent(replyText.trim())}`;
         window.open(gmailUrl, '_blank', 'noopener,noreferrer');
@@ -88,7 +88,7 @@ export default function AdminDashboard({
       setReplyingMsg(null);
       setReplyText('');
       loadDashboard();
-      setTimeout(() => setActionMsg(''), 4000);
+      setTimeout(() => setActionMsg(''), 6000);
     } catch (err) {
       setReplyError(err.message);
     } finally {
@@ -415,30 +415,48 @@ export default function AdminDashboard({
                   </div>
 
                   <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-                    {msg.admin_reply && (
-                      <a
-                        href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(msg.email)}&su=${encodeURIComponent('Re: ' + msg.subject + ' - GECWC Academics')}&body=${encodeURIComponent(msg.admin_reply)}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold py-1.5 px-3 rounded-lg text-xs border border-amber-200 transition"
-                        title="Send or re-send this response to student's Gmail"
+                    {msg.admin_reply ? (
+                      <div className="flex items-center gap-2">
+                        <span className="inline-flex items-center gap-1.5 bg-emerald-50 text-emerald-800 text-[11px] font-bold px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                          <span>Replied in Portal</span>
+                        </span>
+                        <button
+                          onClick={() => {
+                            setReplyingMsg(msg);
+                            setReplyText(msg.admin_reply || getDefaultReplyTemplate(msg, 'general'));
+                            setReplyError('');
+                          }}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5" />
+                          <span>Edit Reply</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          setReplyingMsg(msg);
+                          setReplyText(getDefaultReplyTemplate(msg, 'general'));
+                          setReplyError('');
+                        }}
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition"
                       >
-                        <Mail className="w-3.5 h-3.5 text-amber-600" />
-                        <span>Send via Gmail</span>
-                      </a>
+                        <Send className="w-3.5 h-3.5" />
+                        <span>Reply Directly (In-Portal)</span>
+                      </button>
                     )}
 
-                    <button
-                      onClick={() => {
-                        setReplyingMsg(msg);
-                        setReplyText(msg.admin_reply || getDefaultReplyTemplate(msg, 'general'));
-                        setReplyError('');
-                      }}
-                      className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-2xs transition"
+                    {/* Optional Gmail icon button as secondary alternative */}
+                    <a
+                      href={`https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(msg.email)}&su=${encodeURIComponent('Re: ' + msg.subject + ' - GECWC Academics')}&body=${encodeURIComponent(msg.admin_reply || '')}`}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded-lg text-xs transition border border-transparent hover:border-amber-200"
+                      title="Optional: Open in Gmail Compose"
                     >
-                      <MessageCircle className="w-3.5 h-3.5" />
-                      <span>{msg.admin_reply ? 'Edit Reply' : 'Reply Directly (In-Portal)'}</span>
-                    </button>
+                      <Mail className="w-3.5 h-3.5" />
+                    </a>
                   </div>
                 </div>
               );
@@ -599,14 +617,14 @@ export default function AdminDashboard({
               <p className="whitespace-pre-wrap italic">"{replyingMsg.message}"</p>
             </div>
 
-            {/* Direct Email Delivery Guidance */}
-            <div className="p-3 bg-amber-50/80 border border-amber-200/80 rounded-xl text-xs space-y-1">
-              <div className="font-bold flex items-center gap-1.5 text-amber-800 text-[11px] uppercase tracking-wider">
-                <Mail className="w-3.5 h-3.5 text-amber-600" />
-                <span>Direct Delivery to Student's Gmail Inbox</span>
+            {/* In-Portal Delivery Note */}
+            <div className="p-3 bg-emerald-50/90 border border-emerald-200 rounded-xl text-xs space-y-1">
+              <div className="font-bold flex items-center gap-1.5 text-emerald-900 text-[11px] uppercase tracking-wider">
+                <CheckCircle className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Instant In-Portal Delivery (No Gmail Required)</span>
               </div>
-              <p className="text-[11px] text-amber-900 leading-relaxed">
-                Clicking <strong>"Deliver via Gmail"</strong> saves your reply in the database AND opens your Gmail with this exact response pre-filled, so you can send it directly to <strong>{replyingMsg.email}</strong> in 1 click!
+              <p className="text-[11px] text-emerald-950 leading-relaxed">
+                Clicking <strong>"Send In-Portal Reply"</strong> publishes your response directly to the student portal under <strong>Ticket #{replyingMsg.id}</strong>. The student can view it in real-time without you needing to open external Gmail!
               </p>
             </div>
 
@@ -650,11 +668,11 @@ export default function AdminDashboard({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Your Response (Pre-formatted • Ready to Edit) *
+                  Your In-Portal Reply Message *
                 </label>
                 <textarea
                   required
-                  rows={9}
+                  rows={8}
                   value={replyText}
                   onChange={(e) => setReplyText(e.target.value)}
                   placeholder={`Write your answer, guidance, or resolution for ${replyingMsg.name}...`}
@@ -664,15 +682,15 @@ export default function AdminDashboard({
 
               {/* Delivery Options & Action Buttons */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2">
-                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700 select-none">
+                <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-600 select-none">
                   <input
                     type="checkbox"
                     checked={openGmailOnSend}
                     onChange={(e) => setOpenGmailOnSend(e.target.checked)}
                     className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-300"
                   />
-                  <span className="text-[11px] font-medium text-slate-600">
-                    Open Gmail compose on send (To: <strong className="text-slate-800">{replyingMsg.email}</strong>)
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Also open Gmail compose (Optional)
                   </span>
                 </label>
 
@@ -685,22 +703,12 @@ export default function AdminDashboard({
                     Cancel
                   </button>
                   <button
-                    type="button"
+                    type="submit"
                     disabled={replyLoading}
-                    onClick={(e) => handleSendReply(e, false)}
-                    className="px-3.5 py-2 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition disabled:opacity-50"
-                    title="Save in database only without opening Gmail"
+                    className="flex items-center gap-1.5 px-5 py-2.5 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition disabled:opacity-50"
                   >
-                    Save In-Portal Only
-                  </button>
-                  <button
-                    type="button"
-                    disabled={replyLoading}
-                    onClick={(e) => handleSendReply(e, true)}
-                    className="flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-xs transition disabled:opacity-50"
-                  >
-                    <Mail className="w-3.5 h-3.5" />
-                    <span>{replyLoading ? 'Recording Reply...' : 'Deliver via Gmail & Save'}</span>
+                    <Send className="w-3.5 h-3.5" />
+                    <span>{replyLoading ? 'Sending In-Portal Reply...' : 'Send In-Portal Reply'}</span>
                   </button>
                 </div>
               </div>
