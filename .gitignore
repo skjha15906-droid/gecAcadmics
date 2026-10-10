@@ -17,3 +17,6 @@ server/*.sqlite-wal
 # OS Files
 .DS_Store
 Thumbs.db
+
+# Temporary server uploads (root uploads/ is used)
+server/uploads/

@@ -38,8 +38,11 @@ export default function NoteCard({
 
   return (
     <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs hover:shadow-md transition-all duration-200 flex flex-col justify-between overflow-hidden group">
-      {/* Top Banner / Academic Hierarchy Badges */}
-      <div className="p-4 sm:p-5 flex-1 flex flex-col">
+      {/* Top Banner / Academic Hierarchy Badges & Clickable Card Body */}
+      <div
+        onClick={() => onPreview && onPreview(note)}
+        className="p-4 sm:p-5 flex-1 flex flex-col cursor-pointer"
+      >
         <div className="flex flex-wrap items-center gap-1.5 mb-2.5">
           <span className="bg-slate-900 text-amber-400 text-[11px] font-bold px-2 py-0.5 rounded font-mono">
             Sem {note.sem_number || note.semester_id}
@@ -56,8 +59,7 @@ export default function NoteCard({
 
         {/* Note Title */}
         <h3
-          onClick={() => onPreview && onPreview(note)}
-          className="text-base font-bold text-slate-900 group-hover:text-blue-700 transition cursor-pointer line-clamp-2 mb-1.5"
+          className="text-base font-bold text-slate-900 group-hover:text-blue-700 transition line-clamp-2 mb-1.5"
           title={note.title}
         >
           {note.title}
@@ -109,7 +111,10 @@ export default function NoteCard({
         <div className="flex items-center gap-1.5">
           {/* Direct Online View Button */}
           <button
-            onClick={() => onPreview && onPreview(note)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onPreview && onPreview(note);
+            }}
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-semibold text-slate-700 bg-white hover:text-blue-700 hover:border-blue-300 rounded-md border border-slate-200 transition shadow-2xs"
             title="Read / View Note Online"
           >
@@ -122,6 +127,7 @@ export default function NoteCard({
             href={`/api/notes/${note.id}/view`}
             target="_blank"
             rel="noopener noreferrer"
+            onClick={(e) => e.stopPropagation()}
             className="p-1.5 text-slate-400 hover:text-blue-700 hover:bg-white rounded-md border border-transparent hover:border-slate-200 transition"
             title="Open in Full Browser Tab"
           >
@@ -130,7 +136,10 @@ export default function NoteCard({
 
           {/* Download File Button */}
           <button
-            onClick={() => onDownload && onDownload(note)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onDownload && onDownload(note);
+            }}
             className="flex items-center gap-1.5 px-2.5 py-1 text-xs font-bold text-white bg-blue-700 hover:bg-blue-800 rounded-md transition shadow-2xs"
             title="Download Document to Device"
           >
@@ -140,7 +149,10 @@ export default function NoteCard({
 
           {/* Report / Feedback Button */}
           <button
-            onClick={() => onReport ? onReport(note) : (onPreview && onPreview(note))}
+            onClick={(e) => {
+              e.stopPropagation();
+              onReport ? onReport(note) : (onPreview && onPreview(note));
+            }}
             className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-md transition"
             title="Review note or report an issue"
           >

@@ -40,6 +40,68 @@ const upload = multer({
   }
 });
 
+// Helper to ensure physical file exists on disk, auto-restoring from SQLite BLOB if missing
+function ensurePhysicalFile(note) {
+  if (!note || !note.file_name) return null;
+
+  const candidateDirs = [
+    uploadsDir,
+    path.join(__dirname, '..', 'uploads'),
+    path.join(__dirname, 'uploads')
+  ];
+
+  // 1. Check candidate dirs
+  for (const dir of candidateDirs) {
+    const p = path.join(dir, note.file_name);
+    if (fs.existsSync(p)) {
+      try {
+        const stats = fs.statSync(p);
+        if (stats.size > 0) {
+          const primaryPath = path.join(uploadsDir, note.file_name);
+          if (p !== primaryPath && !fs.existsSync(primaryPath)) {
+            fs.copyFileSync(p, primaryPath);
+          }
+          if (!note.file_data) {
+            try {
+              const buf = fs.readFileSync(p);
+              db.prepare('UPDATE notes SET file_data = ? WHERE id = ?').run(buf, note.id);
+            } catch (_) {}
+          }
+          return primaryPath;
+        }
+      } catch (_) {}
+    }
+  }
+
+  // 2. Retrieve BLOB from DB if not already on the object
+  let fileBuffer = note.file_data;
+  if (!fileBuffer) {
+    try {
+      const row = db.prepare('SELECT file_data FROM notes WHERE id = ?').get(note.id);
+      if (row && row.file_data) {
+        fileBuffer = row.file_data;
+      }
+    } catch (_) {}
+  }
+
+  // 3. Write BLOB to disk
+  if (fileBuffer && Buffer.isBuffer(fileBuffer) && fileBuffer.length > 0) {
+    try {
+      if (!fs.existsSync(uploadsDir)) {
+        fs.mkdirSync(uploadsDir, { recursive: true });
+      }
+      const primaryPath = path.join(uploadsDir, note.file_name);
+      fs.writeFileSync(primaryPath, fileBuffer);
+      console.log(`[File Auto-Restore] Reconstructed ${note.file_name} (${fileBuffer.length} bytes) to disk from SQLite BLOB`);
+      return primaryPath;
+    } catch (err) {
+      console.error('[File Auto-Restore] Failed to write file to disk:', err.message);
+    }
+  }
+
+  return null;
+}
+
 // GET /api/notes - Public approved notes with search, filter, and sort
 router.get('/', (req, res) => {
   const {
@@ -79,9 +141,9 @@ router.get('/', (req, res) => {
       u.unit_number,
       u.title as unit_title
     FROM notes n
-    JOIN semesters sem ON sem.id = n.semester_id
-    JOIN subjects sub ON sub.id = n.subject_id
-    JOIN units u ON u.id = n.unit_id
+    LEFT JOIN semesters sem ON sem.id = n.semester_id
+    LEFT JOIN subjects sub ON sub.id = n.subject_id
+    LEFT JOIN units u ON u.id = n.unit_id
     WHERE n.status = 'approved'
   `;
   const params = [];
@@ -163,9 +225,9 @@ router.get('/featured', (req, res) => {
       sub.code as subject_code, sub.name as subject_name,
       u.unit_number, u.title as unit_title
     FROM notes n
-    JOIN semesters sem ON sem.id = n.semester_id
-    JOIN subjects sub ON sub.id = n.subject_id
-    JOIN units u ON u.id = n.unit_id
+    LEFT JOIN semesters sem ON sem.id = n.semester_id
+    LEFT JOIN subjects sub ON sub.id = n.subject_id
+    LEFT JOIN units u ON u.id = n.unit_id
     WHERE n.status = 'approved'
   `;
 
@@ -179,7 +241,7 @@ router.get('/featured', (req, res) => {
       s.id, s.code, s.name, sem.sem_number,
       (SELECT COUNT(*) FROM notes WHERE subject_id = s.id AND status = 'approved') as notes_count
     FROM subjects s
-    JOIN semesters sem ON sem.id = s.semester_id
+    LEFT JOIN semesters sem ON sem.id = s.semester_id
     WHERE s.is_active = 1
     ORDER BY notes_count DESC, sem.sem_number ASC
     LIMIT 8
@@ -194,7 +256,7 @@ router.get('/featured', (req, res) => {
 });
 
 // GET /api/notes/:id - Single note details (increments view count)
-router.get('/:id', (req, res) => {
+router.get('/:id', optionalAuth, (req, res) => {
   const noteId = req.params.id;
 
   const note = db.prepare(`
@@ -204,9 +266,9 @@ router.get('/:id', (req, res) => {
       sub.code as subject_code, sub.name as subject_name,
       u.unit_number, u.title as unit_title
     FROM notes n
-    JOIN semesters sem ON sem.id = n.semester_id
-    JOIN subjects sub ON sub.id = n.subject_id
-    JOIN units u ON u.id = n.unit_id
+    LEFT JOIN semesters sem ON sem.id = n.semester_id
+    LEFT JOIN subjects sub ON sub.id = n.subject_id
+    LEFT JOIN units u ON u.id = n.unit_id
     WHERE n.id = ?
   `).get(noteId);
 
@@ -214,16 +276,23 @@ router.get('/:id', (req, res) => {
     return res.status(404).json({ error: 'Note not found.' });
   }
 
+  // Ensure file is on disk
+  ensurePhysicalFile(note);
+
   // Only approved notes can be viewed publicly (unless owner or moderator/admin)
   if (note.status !== 'approved') {
-    // If not approved, check if requester is owner or mod/admin
-    // We let optionalAuth handle or return 403
-    return res.status(403).json({ error: 'This note is currently pending review or has not been approved.' });
+    const isOwner = req.user && req.user.id === note.uploaded_by;
+    const isPrivileged = req.user && ['admin', 'moderator', 'faculty'].includes(req.user.role);
+    if (!isOwner && !isPrivileged) {
+      return res.status(403).json({ error: 'This note is currently pending review or has not been approved.' });
+    }
   }
 
   // Increment view count
-  db.prepare('UPDATE notes SET views_count = views_count + 1 WHERE id = ?').run(noteId);
-  note.views_count += 1;
+  try {
+    db.prepare('UPDATE notes SET views_count = views_count + 1 WHERE id = ?').run(noteId);
+    note.views_count += 1;
+  } catch (_) {}
 
   res.json({ note });
 });
@@ -235,9 +304,9 @@ router.get('/:id/view', (req, res) => {
   const note = db.prepare(`
     SELECT n.*, sem.name as semester_name, sem.sem_number, sub.code as subject_code, sub.name as subject_name, u.title as unit_title
     FROM notes n
-    JOIN semesters sem ON sem.id = n.semester_id
-    JOIN subjects sub ON sub.id = n.subject_id
-    JOIN units u ON u.id = n.unit_id
+    LEFT JOIN semesters sem ON sem.id = n.semester_id
+    LEFT JOIN subjects sub ON sub.id = n.subject_id
+    LEFT JOIN units u ON u.id = n.unit_id
     WHERE n.id = ?
   `).get(noteId);
 
@@ -250,9 +319,11 @@ router.get('/:id/view', (req, res) => {
     db.prepare('UPDATE notes SET views_count = views_count + 1 WHERE id = ?').run(noteId);
   } catch (_) {}
 
-  const filePath = path.join(uploadsDir, note.file_name);
+  // Auto-restore physical file from BLOB if missing
+  const primaryPath = ensurePhysicalFile(note);
+  const filePath = primaryPath || path.join(uploadsDir, note.file_name);
   const cleanTitle = note.title.replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  const cleanSubject = `${note.subject_code ? note.subject_code + ' - ' : ''}${note.subject_name}`;
+  const cleanSubject = `${note.subject_code ? note.subject_code + ' - ' : ''}${note.subject_name || 'Academic Subject'}`;
   const cleanUnit = note.unit_title || '';
   const cleanUploader = note.uploader_name || 'Academic Faculty';
 
@@ -663,23 +734,35 @@ router.get('/:id/raw', (req, res) => {
     return res.status(404).send('Note not found.');
   }
 
-  const filePath = path.join(uploadsDir, note.file_name);
-  if (fs.existsSync(filePath)) {
-    const ext = path.extname(note.file_name).toLowerCase();
-    const mimeTypes = {
-      '.pdf': 'application/pdf',
-      '.jpg': 'image/jpeg',
-      '.jpeg': 'image/jpeg',
-      '.png': 'image/png',
-      '.txt': 'text/plain',
-      '.doc': 'application/msword',
-      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-      '.ppt': 'application/vnd.ms-powerpoint',
-      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
-    };
-    res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+  const mimeTypes = {
+    '.pdf': 'application/pdf',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.png': 'image/png',
+    '.txt': 'text/plain',
+    '.doc': 'application/msword',
+    '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    '.ppt': 'application/vnd.ms-powerpoint',
+    '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+  };
+  const ext = path.extname(note.file_name).toLowerCase();
+  const contentType = mimeTypes[ext] || 'application/octet-stream';
+
+  const primaryPath = ensurePhysicalFile(note);
+  const filePath = primaryPath || path.join(uploadsDir, note.file_name);
+
+  if (filePath && fs.existsSync(filePath)) {
+    res.setHeader('Content-Type', contentType);
     res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(note.file_name)}"`);
     return res.sendFile(filePath);
+  }
+
+  // Stream directly from DB BLOB if disk file missing
+  const row = db.prepare('SELECT file_data FROM notes WHERE id = ?').get(noteId);
+  if (row && row.file_data && Buffer.isBuffer(row.file_data) && row.file_data.length > 0) {
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Content-Disposition', `inline; filename="${encodeURIComponent(note.file_name)}"`);
+    return res.send(row.file_data);
   }
 
   res.setHeader('Content-Type', 'text/plain');
@@ -696,18 +779,43 @@ router.get('/:id/download', (req, res) => {
   }
 
   // Increment download count
-  db.prepare('UPDATE notes SET downloads_count = downloads_count + 1 WHERE id = ?').run(noteId);
+  try {
+    db.prepare('UPDATE notes SET downloads_count = downloads_count + 1 WHERE id = ?').run(noteId);
+  } catch (_) {}
 
-  // Serve file
-  const filePath = path.join(uploadsDir, note.file_name);
-  if (fs.existsSync(filePath)) {
-    res.download(filePath, note.title.replace(/[^a-zA-Z0-9_-]/g, '_') + path.extname(note.file_name));
-  } else {
-    // If physical file doesn't exist on disk, return synthetic representation
-    res.setHeader('Content-Disposition', `attachment; filename="${note.file_name}"`);
-    res.setHeader('Content-Type', 'text/plain');
-    res.send(`GECWC ACADEMICS - CSE ACADEMIC NOTES REPOSITORY\n==============================================\nTitle: ${note.title}\nSubject: ${note.subject_id}\nTopic: ${note.topic}\nUploaded by: ${note.uploader_name}\n\n[Digital document verified by Department of Computer Science & Engineering, GEC West Champaran]`);
+  const ext = path.extname(note.file_name).toLowerCase();
+  const safeFilename = (note.title.replace(/[^a-zA-Z0-9_-]/g, '_') || 'document') + ext;
+
+  const primaryPath = ensurePhysicalFile(note);
+  const filePath = primaryPath || path.join(uploadsDir, note.file_name);
+
+  if (filePath && fs.existsSync(filePath)) {
+    return res.download(filePath, safeFilename);
   }
+
+  // Stream directly from DB BLOB if disk file missing
+  const row = db.prepare('SELECT file_data FROM notes WHERE id = ?').get(noteId);
+  if (row && row.file_data && Buffer.isBuffer(row.file_data) && row.file_data.length > 0) {
+    const mimeTypes = {
+      '.pdf': 'application/pdf',
+      '.jpg': 'image/jpeg',
+      '.jpeg': 'image/jpeg',
+      '.png': 'image/png',
+      '.txt': 'text/plain',
+      '.doc': 'application/msword',
+      '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      '.ppt': 'application/vnd.ms-powerpoint',
+      '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation'
+    };
+    res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+    res.setHeader('Content-Type', mimeTypes[ext] || 'application/octet-stream');
+    return res.send(row.file_data);
+  }
+
+  // If physical file doesn't exist on disk, return synthetic representation
+  res.setHeader('Content-Disposition', `attachment; filename="${note.file_name}"`);
+  res.setHeader('Content-Type', 'text/plain');
+  res.send(`GECWC ACADEMICS - CSE ACADEMIC NOTES REPOSITORY\n==============================================\nTitle: ${note.title}\nSubject: ${note.subject_id}\nTopic: ${note.topic}\nUploaded by: ${note.uploader_name}\n\n[Digital document verified by Department of Computer Science & Engineering, GEC West Champaran]`);
 });
 
 function ensureNoteReviewsTable() {
@@ -978,13 +1086,21 @@ router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
 
     const ext = path.extname(req.file.originalname).toUpperCase().replace('.', '');
     const fileUrl = `/uploads/${req.file.filename}`;
+    let fileBuffer = null;
+    try {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        fileBuffer = fs.readFileSync(req.file.path);
+      }
+    } catch (e) {
+      console.warn('[Upload] Could not read file buffer:', e.message);
+    }
 
     const insert = db.prepare(`
       INSERT INTO notes (
         title, semester_id, subject_id, unit_id, topic, description,
         resource_type, file_url, file_name, file_type, file_size,
-        uploaded_by, uploader_name, status
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
+        file_data, uploaded_by, uploader_name, status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
     `);
 
     const result = insert.run(
@@ -999,6 +1115,7 @@ router.post('/upload', requireAuth, upload.single('file'), (req, res) => {
       req.file.filename,
       ext || 'PDF',
       req.file.size,
+      fileBuffer,
       req.user.id,
       req.user.name
     );

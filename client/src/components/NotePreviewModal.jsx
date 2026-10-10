@@ -59,12 +59,19 @@ export default function NotePreviewModal({
     'Other Problem'
   ];
 
+  // Reset activeTab whenever a new note or initialTab is requested
+  useEffect(() => {
+    setActiveTab(initialTab || 'viewer');
+    setReviewError('');
+    setReviewSuccess('');
+  }, [note?.id, initialTab]);
+
   // Fetch reviews whenever note changes
   useEffect(() => {
     if (note && note.id) {
       loadReviews();
     }
-  }, [note]);
+  }, [note?.id]);
 
   const loadReviews = async () => {
     if (!note || !note.id) return;

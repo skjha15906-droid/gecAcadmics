@@ -148,6 +148,8 @@ router.post('/submissions/:id/approve', (req, res) => {
     `Approved academic note: "${note.title}" submitted by ${note.uploader_name}`
   );
 
+  triggerCloudBackup();
+
   res.json({ success: true, message: `Note "${note.title}" has been approved and published.` });
 });
 
@@ -188,14 +190,16 @@ router.post('/submissions/:id/reject', (req, res) => {
     `Rejected note: "${note.title}". Reason: ${reason}`
   );
 
+  triggerCloudBackup();
+
   res.json({ success: true, message: `Note has been marked as rejected with reason: ${reason}` });
 });
 
 // DELETE /api/admin/submissions/:id - Permanent note deletion
 router.delete('/submissions/:id', (req, res) => {
   const noteId = req.params.id;
-  const note = db.prepare('SELECT id, title, file_name FROM notes WHERE id = ?').get(noteId);
 
+  const note = db.prepare('SELECT id, title, file_name FROM notes WHERE id = ?').get(noteId);
   if (!note) {
     return res.status(404).json({ error: 'Note not found.' });
   }
@@ -222,6 +226,8 @@ router.delete('/submissions/:id', (req, res) => {
     noteId,
     `Permanently deleted note: "${note.title}"`
   );
+
+  triggerCloudBackup();
 
   res.json({ success: true, message: `Note "${note.title}" deleted successfully.` });
 });

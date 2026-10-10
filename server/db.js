@@ -29,6 +29,7 @@ function reloadDatabase() {
   currentDb.pragma('foreign_keys = ON');
   ensureSchema();
   syncAdminCredentials();
+  autoRestorePhysicalFiles();
   console.log('[DB] Database reloaded successfully via proxy.');
 }
 
@@ -95,6 +96,7 @@ function ensureSchema() {
       file_name TEXT NOT NULL,
       file_type TEXT NOT NULL,
       file_size INTEGER NOT NULL,
+      file_data BLOB,
       uploaded_by INTEGER NOT NULL REFERENCES users(id),
       uploader_name TEXT NOT NULL,
       status TEXT NOT NULL DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
@@ -167,12 +169,72 @@ function ensureSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
+
+  // Migration: Ensure notes table has file_data BLOB column
+  try {
+    const notesCols = db.prepare('PRAGMA table_info(notes)').all().map(c => c.name);
+    if (!notesCols.includes('file_data')) {
+      db.exec('ALTER TABLE notes ADD COLUMN file_data BLOB');
+      console.log('[DB Migration] Added file_data BLOB column to notes table.');
+    }
+  } catch (err) {
+    console.error('[DB Migration] Error ensuring file_data column:', err.message);
+  }
+
+  // Migration: Cache existing physical files from uploads directories into file_data BLOB
+  try {
+    const candidateDirs = [
+      path.join(__dirname, '..', 'uploads'),
+      path.join(__dirname, 'uploads')
+    ];
+    const notesWithoutBlob = db.prepare("SELECT id, file_name FROM notes WHERE file_data IS NULL").all();
+    const updateStmt = db.prepare("UPDATE notes SET file_data = ? WHERE id = ?");
+    for (const n of notesWithoutBlob) {
+      for (const dir of candidateDirs) {
+        const p = path.join(dir, n.file_name);
+        if (fs.existsSync(p)) {
+          const buf = fs.readFileSync(p);
+          if (buf.length > 0) {
+            updateStmt.run(buf, n.id);
+            console.log(`[DB Migration] Cached physical file into SQLite BLOB for note #${n.id} (${n.file_name}, ${buf.length} bytes)`);
+            break;
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('[DB Migration] Error caching files to blob:', err.message);
+  }
+}
+
+function autoRestorePhysicalFiles() {
+  try {
+    const targetDir = path.join(__dirname, '..', 'uploads');
+    if (!fs.existsSync(targetDir)) {
+      fs.mkdirSync(targetDir, { recursive: true });
+    }
+    const notesWithBlob = db.prepare('SELECT id, file_name, file_data FROM notes WHERE file_data IS NOT NULL').all();
+    let count = 0;
+    for (const n of notesWithBlob) {
+      const p = path.join(targetDir, n.file_name);
+      if (!fs.existsSync(p) && n.file_data) {
+        fs.writeFileSync(p, n.file_data);
+        count++;
+      }
+    }
+    if (count > 0) {
+      console.log(`[Storage] Auto-restored ${count} note file(s) onto disk from SQLite BLOB storage.`);
+    }
+  } catch (err) {
+    console.error('[Storage] Error auto-restoring files:', err.message);
+  }
 }
 
 function initDatabase() {
   ensureSchema();
   seedInitialData();
   syncAdminCredentials();
+  autoRestorePhysicalFiles();
 }
 
 function syncAdminCredentials() {

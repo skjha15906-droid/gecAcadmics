@@ -28,6 +28,7 @@ import AdminSettings from './pages/admin/AdminSettings';
 import AdminMessages from './pages/admin/AdminMessages';
 
 function AppContent() {
+  const { token } = useAuth();
   const [currentRoute, setCurrentRoute] = useState('home');
   const [selectedSemester, setSelectedSemester] = useState(3);
   const [selectedSubject, setSelectedSubject] = useState(null);
@@ -80,7 +81,8 @@ function AppContent() {
   const handlePreview = async (note, initialTab = 'viewer') => {
     setPreviewInitialTab(initialTab);
     try {
-      const res = await fetch(`/api/notes/${note.id}`);
+      const headers = token ? { Authorization: `Bearer ${token}` } : {};
+      const res = await fetch(`/api/notes/${note.id}`, { headers });
       if (res.ok) {
         const data = await res.json();
         setPreviewNote(data.note);
